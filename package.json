@@ -23,7 +23,12 @@
     "files": [
       "**/*",
       "!yolo_venv/**/*",
-      "!yolo_venv"
+      "!yolo_venv",
+      "!tested_redaction_script/**/*",
+      "!tested_redaction_script",
+      "!append_styles.py",
+      "!dist/**/*",
+      "!dist"
     ],
     "win": {
       "target": "nsis"

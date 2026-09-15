@@ -17,6 +17,7 @@
     />
 
     <link rel="stylesheet" href="./styles.css?v=2" />
+    <script type="module" src="./js/titlebar.js"></script>
     <script>
       if (localStorage.getItem("gts-theme") === "dark") {
         document.documentElement.setAttribute("data-theme", "dark");
@@ -65,6 +66,25 @@
       <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" rel="stylesheet">
   </head>
   <body>
+    <div class="app-titlebar">
+      <div class="app-titlebar-drag">
+        <div class="app-titlebar-brand">
+          <span class="material-symbols-rounded">auto_awesome_mosaic</span>
+          <span class="app-titlebar-title">Sarvia</span>
+        </div>
+      </div>
+      <div class="app-window-controls">
+        <button type="button" class="app-window-control" data-window-action="minimize" title="Minimize" aria-label="Minimize window">
+          <span class="material-symbols-rounded">remove</span>
+        </button>
+        <button type="button" class="app-window-control" data-window-action="maximize" title="Maximize" aria-label="Maximize window">
+          <span class="material-symbols-rounded">crop_square</span>
+        </button>
+        <button type="button" class="app-window-control app-window-close" data-window-action="close" title="Close" aria-label="Close window">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+    </div>
     <!-- Elegant Minimal Splash Screen -->
     <div id="splash-screen">
       <div class="splash-content">
@@ -824,11 +844,58 @@
       <div class="resizer"></div>
 
       <div class="main-content editor-main" style="display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding: 30px;">
-        <div id="editor-empty-state" class="main-empty-state">
+        <div id="editor-empty-state" class="main-empty-state" style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%;">
           <span class="material-symbols-rounded">image</span>
           <h2>Select an Image</h2>
           <p>Choose an image from the sidebar to view it.</p>
+          
+          <div style="display: flex; gap: 12px; margin-top: 20px; align-items: center; justify-content: center; flex-wrap: wrap;">
+            <div class="custom-dropdown" id="dd-bulk-redact" style="width: auto;">
+              <button class="custom-dropdown-btn" id="btn-dd-bulk-redact" style="padding: 8px 16px; font-size: 13px; font-family: 'Poppins', sans-serif; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--bg-base); color: var(--text-main); border: 1px solid var(--border-color); cursor: pointer; border-radius: 6px; transition: background 0.2s;">
+                <span class="material-symbols-rounded" style="font-size: 16px; color: var(--text-muted);">blur_on</span> Bulk Auto-Redact
+                <span class="material-symbols-rounded" style="font-size: 16px; color: var(--text-muted);">expand_more</span>
+              </button>
+              <div class="custom-dropdown-content" id="content-dd-bulk-redact" style="width: 100%; min-width: 120px;">
+                <div class="custom-dropdown-item" id="bulk-redact-files-opt" data-value="files"><span class="material-symbols-rounded" style="font-size: 16px; color: var(--text-muted);">draft</span> Files</div>
+                <div class="custom-dropdown-item" id="bulk-redact-folder-opt" data-value="folder"><span class="material-symbols-rounded" style="font-size: 16px; color: var(--text-muted);">folder</span> Folder</div>
+              </div>
+            </div>
+          </div>
         </div>
+
+        <div id="editor-bulk-redact-container" style="display: none; flex-direction: column; height: 100%; width: 100%;">
+          <div class="content-header" style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h2 style="margin: 0">Bulk Auto-Redact</h2>
+              <span id="bulk-redact-count" style="color: var(--text-muted); font-size: 13px; font-weight: 300;">0 files selected</span>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <div class="custom-dropdown" id="dd-bulk-redact-mode" style="width: auto;">
+                <button class="custom-dropdown-btn" id="btn-dd-bulk-redact-mode" style="padding: 6px 12px; font-size: 12px; font-family: 'Poppins', sans-serif; display: flex; align-items: center; gap: 6px; background: var(--bg-panel); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer;">
+                  <span class="material-symbols-rounded" id="bulk-redact-mode-icon" style="font-size: 16px;">blur_on</span>
+                  <span id="bulk-redact-mode-label">Blur</span>
+                  <span class="material-symbols-rounded" style="font-size: 16px;">expand_more</span>
+                </button>
+                <div class="custom-dropdown-content" id="content-dd-bulk-redact-mode" style="min-width: 130px;">
+                  <div class="custom-dropdown-item" data-value="blur"><span class="material-symbols-rounded" style="font-size: 16px;">blur_on</span> Blur</div>
+                  <div class="custom-dropdown-item" data-value="black"><span class="material-symbols-rounded" style="font-size: 16px;">check_box_outline_blank</span> Black Box</div>
+                  <div class="custom-dropdown-item" data-value="white"><span class="material-symbols-rounded" style="font-size: 16px;">check_box_outline_blank</span> White Box</div>
+                </div>
+              </div>
+              <input type="hidden" id="bulk-redact-mode" value="blur" />
+            </div>
+          </div>
+          
+          <div id="bulk-redact-list" style="flex: 1; overflow-y: auto; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; margin-bottom: 20px;">
+            <!-- list of files -->
+          </div>
+          
+          <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button id="cancel-bulk-redact-btn" class="icon-btn" style="padding: 10px 20px;">Cancel</button>
+            <button id="perform-bulk-redact-btn" class="icon-btn active" style="padding: 10px 20px; background: var(--gts-gradient); color: #fff; border: none;">Redact Images</button>
+          </div>
+        </div>
+
         <div id="editor-preview-container" style="display: none; flex-direction: column; align-items: center; justify-content: center; height: 100%; width: 100%;">
           <img id="editor-preview-img" style="max-width: 100%; max-height: 80%; object-fit: contain; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);" />
           <div id="redact-review-container" style="display: none; position: relative; max-width: 100%; max-height: 100%;">
@@ -1160,10 +1227,10 @@
         </div>
 
         <div style="display: flex; flex-direction: column; gap: 16px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--border-color);">
-            <div>
-              <strong style="display: block; font-size: 14px; color: var(--text-main);">Dark Mode</strong>
-              <small style="color: var(--text-muted); font-size: 12px;">Toggle dark appearance theme for Sarvia</small>
+	          <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--border-color);">
+	            <div>
+	              <strong style="display: block; font-size: 14px; color: var(--text-main);">Dark Mode</strong>
+	              <small style="color: var(--text-muted); font-size: 12px;">Toggle dark appearance theme for Sarvia</small>
             </div>
             <input
               type="checkbox"
@@ -1174,63 +1241,71 @@
                 height: 18px;
                 accent-color: var(--gts-teal);
                 margin: 0;
-              "
-            />
-          </div>
-        </div>
-      </div>
-    </div>
+	              "
+	            />
+	          </div>
+	          <div style="display: flex; flex-direction: column; gap: 14px; padding-top: 8px;">
+	            <div>
+	              <strong style="display: block; font-size: 14px; color: var(--text-main); margin-bottom: 4px;">Keyboard Shortcuts</strong>
+	              <small style="color: var(--text-muted); font-size: 12px;">Available keyboard controls across Sarvia</small>
+	            </div>
+	            <div style="display: grid; gap: 8px; font-size: 12px; color: var(--text-main);">
+	              <div style="display: flex; justify-content: space-between; gap: 16px; align-items: center;">
+	                <span>Move through controls</span>
+	                <kbd>Tab</kbd>
+	              </div>
+	              <div style="display: flex; justify-content: space-between; gap: 16px; align-items: center;">
+	                <span>Activate focused buttons, rows, and dropdown options</span>
+	                <kbd>Enter</kbd>
+	              </div>
+	              <div style="display: flex; justify-content: space-between; gap: 16px; align-items: center;">
+	                <span>Toggle focused checkboxes and selectable rows</span>
+	                <kbd>Space</kbd>
+	              </div>
+	              <div style="display: flex; justify-content: space-between; gap: 16px; align-items: center;">
+	                <span>Move through file lists and dropdown options</span>
+	                <kbd>Arrow Up / Down</kbd>
+	              </div>
+	              <div style="display: flex; justify-content: space-between; gap: 16px; align-items: center;">
+	                <span>Open or close focused folders</span>
+	                <kbd>Arrow Right / Left</kbd>
+	              </div>
+	              <div style="display: flex; justify-content: space-between; gap: 16px; align-items: center;">
+	                <span>Close menus, dropdowns, and active modals</span>
+	                <kbd>Esc</kbd>
+	              </div>
+	              <div style="display: flex; justify-content: space-between; gap: 16px; align-items: center;">
+	                <span>Open EXIF context menu from a focused metadata item</span>
+	                <kbd>Shift + F10</kbd>
+	              </div>
+	              <div style="display: flex; justify-content: space-between; gap: 16px; align-items: center;">
+	                <span>Apply EXIF popup changes</span>
+	                <kbd>Ctrl / Cmd + S</kbd>
+	              </div>
+	              <div style="display: flex; justify-content: space-between; gap: 16px; align-items: center;">
+	                <span>Move crop, blur, or redaction boxes</span>
+	                <kbd>Arrow Keys</kbd>
+	              </div>
+	              <div style="display: flex; justify-content: space-between; gap: 16px; align-items: center;">
+	                <span>Resize crop, blur, or redaction boxes</span>
+	                <kbd>Shift + Arrow Keys</kbd>
+	              </div>
+	              <div style="display: flex; justify-content: space-between; gap: 16px; align-items: center;">
+	                <span>Fine-adjust crop, blur, or redaction boxes</span>
+	                <kbd>Alt + Arrow Keys</kbd>
+	              </div>
+	              <div style="display: flex; justify-content: space-between; gap: 16px; align-items: center;">
+	                <span>Remove focused redaction box</span>
+	                <kbd>Delete / Backspace</kbd>
+	              </div>
+	            </div>
+	          </div>
+	        </div>
+	      </div>
+	    </div>
 
     <script type="module" src="./renderer.js"></script>
   
-    <!-- Custom Dropdown JS -->
-    <script>
-      (function() {
-        function setup(prefix) {
-          const btn = document.getElementById('btn-dd-' + prefix);
-          const content = document.getElementById('content-dd-' + prefix);
-          const input = document.getElementById('converter-' + (prefix === 'format' ? 'format' : 'source') + '-select');
-          const label = document.getElementById(prefix + '-label');
-          
-          if(btn) {
-            btn.addEventListener('click', (e) => {
-              e.stopPropagation();
-              document.querySelectorAll('.custom-dropdown-content').forEach(c => {
-                if(c !== content) c.classList.remove('show');
-              });
-              content.classList.toggle('show');
-            });
-            
-            content.querySelectorAll('.custom-dropdown-item').forEach(item => {
-              item.addEventListener('click', (e) => {
-                input.value = item.dataset.value;
-                const iconText = item.querySelector('.material-symbols-rounded').textContent;
-                label.innerHTML = '<span class="material-symbols-rounded" style="font-size: 18px;">' + iconText + '</span> ' + item.textContent.replace(iconText, '').trim();
-                content.classList.remove('show');
-                
-                // Dispatch custom event for source format logic
-                if (prefix === 'source') {
-                  document.dispatchEvent(new CustomEvent('source-format-changed', { detail: input.value }));
-                }
-              });
-            });
-          }
-        }
-        
-        setup('format');
-        setup('source');
-        setup('bulk-mute');
-        setup('bulk-frame');
-        
-        document.addEventListener('click', (e) => {
-          document.querySelectorAll('.custom-dropdown-content').forEach(content => {
-            if(!content.contains(e.target) && !e.target.closest('.custom-dropdown-btn')) {
-              content.classList.remove('show');
-            }
-          });
-        });
-      })();
-    </script>
       <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
   <div id="status-toast"></div>
 
@@ -1251,6 +1326,50 @@
     <div style="display: flex; justify-content: flex-end; gap: 10px;">
       <button id="btn-cancel-blur-time" class="action-btn">Cancel</button>
       <button id="btn-confirm-blur-time" class="action-btn primary">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Save Options Modal -->
+<div id="bulk-save-modal" class="bulk-save-modal-backdrop">
+  <div class="bulk-save-box">
+    <div class="bulk-save-header">
+      <h3 class="bulk-save-title" id="bulk-save-title">Save Options</h3>
+      <button id="btn-close-bulk-save" class="bulk-save-close-btn" title="Close">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+    
+    <p class="bulk-save-desc" id="bulk-save-desc">
+      Choose how you want to save the processed files:
+    </p>
+
+    <div class="bulk-save-options-list">
+      <!-- Replace Original Button -->
+      <button id="btn-bulk-save-replace" class="bulk-save-option-card">
+        <div class="bulk-save-icon-wrap">
+          <span class="material-symbols-rounded">sync</span>
+        </div>
+        <div class="bulk-save-text-wrap">
+          <span class="bulk-save-label">Replace Existing Files</span>
+          <span class="bulk-save-sublabel">Overwrites the original files in their current location</span>
+        </div>
+      </button>
+
+      <!-- Save as New Folder Button -->
+      <button id="btn-bulk-save-new" class="bulk-save-option-card">
+        <div class="bulk-save-icon-wrap blue">
+          <span class="material-symbols-rounded">drive_folder_upload</span>
+        </div>
+        <div class="bulk-save-text-wrap">
+          <span class="bulk-save-label" id="bulk-save-new-label">Save as New Files...</span>
+          <span class="bulk-save-sublabel" id="bulk-save-new-desc">Choose a destination folder to export the new files</span>
+        </div>
+      </button>
+    </div>
+
+    <div class="bulk-save-footer">
+      <button id="btn-cancel-bulk-save" class="bulk-save-cancel-btn">Cancel</button>
     </div>
   </div>
 </div>

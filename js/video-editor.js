@@ -1,4 +1,10 @@
-import { escapeHtml, videoExtensions } from "./utils.js";
+import { escapeHtml, videoExtensions, promptBulkSaveOptions } from "./utils.js";
+import {
+  focusFirstControl,
+  handleVerticalNavigation,
+  isTypingTarget,
+  makeKeyboardAction,
+} from "./keyboard.js";
 
 let currentSelectedVideoPath = null;
 let currentSelectedVideoExtension = null;
@@ -68,6 +74,16 @@ function setupBulkMuteLogic() {
     const checkboxes = document.querySelectorAll('.bulk-mute-cb:checked');
     const selectedFiles = Array.from(checkboxes).map(cb => cb.dataset.path);
     if (selectedFiles.length === 0) return;
+
+    const saveOpt = await promptBulkSaveOptions({
+      title: "Bulk Mute Save Options",
+      description: "Choose how you want to save the muted videos:",
+      allowReplace: true,
+      newLabel: "Save as New Videos...",
+      newDesc: "Choose a destination folder to export the muted videos",
+    });
+
+    if (saveOpt.choice === "cancel") return;
     
     // Show progress modal
     const progressModal = document.getElementById("progress-modal");
@@ -86,7 +102,11 @@ function setupBulkMuteLogic() {
     progressDetail.textContent = "Starting...";
     if (cancelBtn) cancelBtn.style.display = "inline-flex";
 
-    const res = await window.electronAPI.bulkMuteVideos({ files: selectedFiles });
+    const res = await window.electronAPI.bulkMuteVideos({
+      files: selectedFiles,
+      saveMode: saveOpt.choice,
+      outputDir: saveOpt.outputDir,
+    });
     
     if (res.error) {
       progressTitle.textContent = "Muting Failed";
@@ -163,6 +183,7 @@ function showBulkMuteContainer() {
        const selectedCount = document.querySelectorAll('.bulk-mute-cb:checked').length;
        document.getElementById("bulk-mute-count").textContent = `${selectedCount} video(s) selected`;
        document.getElementById("perform-bulk-mute-btn").disabled = selectedCount === 0;
+       item.setAttribute("aria-checked", cb.checked ? "true" : "false");
     });
 
     const labelSpan = document.createElement("span");
@@ -171,6 +192,17 @@ function showBulkMuteContainer() {
 
     item.appendChild(cb);
     item.appendChild(labelSpan);
+    item.tabIndex = 0;
+    item.setAttribute("role", "checkbox");
+    item.setAttribute("aria-checked", "true");
+    item.setAttribute("aria-label", `Select ${path}`);
+    makeKeyboardAction(item, () => {
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event("change"));
+    }, null);
+    item.addEventListener("keydown", (e) =>
+      handleVerticalNavigation(e, item, "#bulk-mute-list label"),
+    );
     listEl.appendChild(item);
   });
 }
@@ -217,6 +249,16 @@ function setupBulkExtractFrameLogic() {
 
     const frameNumberInput = document.getElementById("bulk-frame-number-input");
     const frameNum = Math.max(1, parseInt(frameNumberInput?.value, 10) || 1);
+
+    const saveOpt = await promptBulkSaveOptions({
+      title: "Extract Frames Destination",
+      description: `Choose a destination folder to export frame #${frameNum} from the selected videos:`,
+      allowReplace: false,
+      newLabel: "Select Destination Folder...",
+      newDesc: "Choose where the extracted frame images should be saved",
+    });
+
+    if (saveOpt.choice === "cancel") return;
     
     // Show progress modal
     const progressModal = document.getElementById("progress-modal");
@@ -238,7 +280,8 @@ function setupBulkExtractFrameLogic() {
     const res = await window.electronAPI.bulkExtractFrame({
       files: selectedFiles,
       frameNumber: frameNum,
-      sourceFolder: bulkFrameSourceFolder
+      sourceFolder: bulkFrameSourceFolder,
+      outputDir: saveOpt.outputDir,
     });
     
     if (res.error) {
@@ -313,9 +356,10 @@ function showBulkFrameContainer() {
     cb.style.margin = "0";
     
     cb.addEventListener("change", () => {
-       const selectedCount = document.querySelectorAll('.bulk-frame-cb:checked').length;
-       document.getElementById("bulk-frame-count").textContent = `${selectedCount} video(s) selected`;
-       document.getElementById("perform-bulk-frame-btn").disabled = selectedCount === 0;
+      const selectedCount = document.querySelectorAll('.bulk-frame-cb:checked').length;
+      document.getElementById("bulk-frame-count").textContent = `${selectedCount} video(s) selected`;
+      document.getElementById("perform-bulk-frame-btn").disabled = selectedCount === 0;
+      item.setAttribute("aria-checked", cb.checked ? "true" : "false");
     });
 
     const labelSpan = document.createElement("span");
@@ -324,6 +368,17 @@ function showBulkFrameContainer() {
 
     item.appendChild(cb);
     item.appendChild(labelSpan);
+    item.tabIndex = 0;
+    item.setAttribute("role", "checkbox");
+    item.setAttribute("aria-checked", "true");
+    item.setAttribute("aria-label", `Select ${path}`);
+    makeKeyboardAction(item, () => {
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event("change"));
+    }, null);
+    item.addEventListener("keydown", (e) =>
+      handleVerticalNavigation(e, item, "#bulk-frame-list label"),
+    );
     listEl.appendChild(item);
   });
 }
@@ -384,11 +439,16 @@ async function renderVideoEditorDirectory(path, containerElement) {
       childrenContainer.className = "children-container";
       node.appendChild(childrenContainer);
       let isLoaded = false;
-      
-      content.addEventListener("mousedown", async (e) => {
-        if (e.button !== 0) return;
-        e.stopPropagation();
-        if (!item.classList.contains("open")) {
+      const syncExpandedState = () => {
+        content.setAttribute(
+          "aria-expanded",
+          item.classList.contains("open") ? "true" : "false",
+        );
+      };
+      const toggleDirectory = async (forceOpen = null) => {
+        const shouldOpen =
+          forceOpen === null ? !item.classList.contains("open") : forceOpen;
+        if (shouldOpen) {
           item.classList.add("open");
           childrenContainer.classList.add("open");
           if (!isLoaded) {
@@ -399,18 +459,37 @@ async function renderVideoEditorDirectory(path, containerElement) {
           item.classList.remove("open");
           childrenContainer.classList.remove("open");
         }
+        syncExpandedState();
+      };
+      content.setAttribute("aria-label", `Open ${entry.name}`);
+      makeKeyboardAction(content, () => toggleDirectory());
+      content.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight") {
+          e.preventDefault();
+          toggleDirectory(true);
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          toggleDirectory(false);
+        } else {
+          handleVerticalNavigation(e, content, "#video-file-tree .item-content");
+        }
       });
-    } else {
+      syncExpandedState();
+      
       content.addEventListener("mousedown", async (e) => {
         if (e.button !== 0) return;
         e.stopPropagation();
+        toggleDirectory();
+      });
+    } else {
+      const selectVideo = (e = {}) => {
+        if (e.stopPropagation) e.stopPropagation();
         
         document
           .querySelectorAll("#video-file-tree .tree-item.selected")
           .forEach((el) => el.classList.remove("selected"));
         item.classList.add("selected");
 
-        // Handle Video Selection
         currentSelectedVideoPath = entry.path;
         currentSelectedVideoExtension = entry.extension;
         
@@ -422,10 +501,16 @@ async function renderVideoEditorDirectory(path, containerElement) {
         
         const previewVid = document.getElementById("video-preview-vid");
         
-        // Videos can be loaded via a file:// URL in some isolated contexts if allowed, 
-        // or through a custom protocol, but for now we'll set the src to the local path.
-        // It might not play perfectly if it's not mp4/webm, but it fulfills the layout requirement.
         previewVid.src = 'file://' + entry.path;
+      };
+      content.setAttribute("aria-label", `Preview ${entry.name}`);
+      makeKeyboardAction(content, selectVideo);
+      content.addEventListener("keydown", (e) =>
+        handleVerticalNavigation(e, content, "#video-file-tree .item-content"),
+      );
+      content.addEventListener("mousedown", async (e) => {
+        if (e.button !== 0) return;
+        selectVideo(e);
       });
     }
     containerElement.appendChild(node);
@@ -462,9 +547,9 @@ let currentFilePath = null;
         document.getElementById("btn-cancel-vid").disabled = false;
       }
       
-      function disableSave() {
-        isEdited = false;
-        document.getElementById("btn-save-vid").disabled = true;
+	      function disableSave() {
+	        isEdited = false;
+	        document.getElementById("btn-save-vid").disabled = true;
         document.getElementById("btn-cancel-vid").disabled = true;
         document.getElementById("save-dropdown-vid").classList.remove("show");
         cropData = null;
@@ -476,10 +561,49 @@ let currentFilePath = null;
         video.style.objectViewBox = "none";
         exitCropMode();
         exitBlurMode();
-        if (typeof updateBlurPreview === 'function') updateBlurPreview();
-      }
-      
-      document.getElementById("btn-set-start").addEventListener("click", () => {
+	        if (typeof updateBlurPreview === 'function') updateBlurPreview();
+	      }
+
+	      document.addEventListener("keydown", (e) => {
+	        if (!cropper || (!isCroppingMode && !isBlurringMode)) return;
+	        if (isTypingTarget(e.target) || e.ctrlKey || e.metaKey) return;
+
+	        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+	          const data = cropper.getData(true);
+	          if (!data || data.width <= 0 || data.height <= 0) return;
+
+	          const step = e.altKey ? 1 : 10;
+	          const next = { ...data };
+	          e.preventDefault();
+
+	          if (e.shiftKey) {
+	            if (e.key === "ArrowLeft") next.width = Math.max(4, data.width - step);
+	            if (e.key === "ArrowRight") next.width = Math.min(video.videoWidth - data.x, data.width + step);
+	            if (e.key === "ArrowUp") next.height = Math.max(4, data.height - step);
+	            if (e.key === "ArrowDown") next.height = Math.min(video.videoHeight - data.y, data.height + step);
+	          } else {
+	            if (e.key === "ArrowLeft") next.x = Math.max(0, data.x - step);
+	            if (e.key === "ArrowRight") next.x = Math.min(video.videoWidth - data.width, data.x + step);
+	            if (e.key === "ArrowUp") next.y = Math.max(0, data.y - step);
+	            if (e.key === "ArrowDown") next.y = Math.min(video.videoHeight - data.height, data.y + step);
+	          }
+
+	          cropper.setData(next);
+	        } else if (e.key === "Enter") {
+	          e.preventDefault();
+	          if (isCroppingMode) {
+	            document.getElementById("btn-crop-mode")?.click();
+	          } else if (isBlurringMode) {
+	            document.getElementById("btn-apply-blur")?.focus();
+	          }
+	        } else if (e.key === "Escape") {
+	          e.preventDefault();
+	          if (isCroppingMode) exitCropMode();
+	          if (isBlurringMode) exitBlurMode();
+	        }
+	      });
+	      
+	      document.getElementById("btn-set-start").addEventListener("click", () => {
         trimStart.value = video.currentTime.toFixed(2);
         enableSave();
       });
@@ -648,10 +772,14 @@ let currentFilePath = null;
         }
       });
 
-      document.getElementById("btn-apply-blur").addEventListener("click", (e) => {
-        e.stopPropagation();
-        document.getElementById("apply-blur-dropdown").classList.toggle("show");
-      });
+	      document.getElementById("btn-apply-blur").addEventListener("click", (e) => {
+	        e.stopPropagation();
+	        const applyBlurDropdown = document.getElementById("apply-blur-dropdown");
+	        applyBlurDropdown.classList.toggle("show");
+	        if (applyBlurDropdown.classList.contains("show")) {
+	          focusFirstControl(applyBlurDropdown);
+	        }
+	      });
 
       function updateBlurPreview() {
         let overlay = document.getElementById("blur-preview-overlay");
@@ -755,27 +883,39 @@ let currentFilePath = null;
         applyBlurSettings(null, null);
       });
 
-      document.getElementById("btn-blur-timeframe").addEventListener("click", () => {
-        document.getElementById("apply-blur-dropdown").classList.remove("show");
-        document.getElementById("blur-start").value = trimStart.value || "0";
-        document.getElementById("blur-end").value = trimEnd.value || video.duration.toFixed(2);
-        document.getElementById("blur-time-modal").style.display = "flex";
-      });
+	      document.getElementById("btn-blur-timeframe").addEventListener("click", () => {
+	        document.getElementById("apply-blur-dropdown").classList.remove("show");
+	        document.getElementById("blur-start").value = trimStart.value || "0";
+	        document.getElementById("blur-end").value = trimEnd.value || video.duration.toFixed(2);
+	        document.getElementById("blur-time-modal").style.display = "flex";
+	        focusFirstControl(document.getElementById("blur-time-modal"));
+	      });
 
       document.getElementById("btn-cancel-blur-time").addEventListener("click", () => {
         document.getElementById("blur-time-modal").style.display = "none";
       });
 
-      document.getElementById("btn-confirm-blur-time").addEventListener("click", () => {
+	      document.getElementById("btn-confirm-blur-time").addEventListener("click", () => {
         const st = parseFloat(document.getElementById("blur-start").value);
         const en = parseFloat(document.getElementById("blur-end").value);
         if (isNaN(st) || isNaN(en) || st >= en) {
           alert("Invalid timeframe.");
           return;
         }
-        document.getElementById("blur-time-modal").style.display = "none";
-        applyBlurSettings(st, en);
-      });
+	        document.getElementById("blur-time-modal").style.display = "none";
+	        applyBlurSettings(st, en);
+	      });
+
+	      document.addEventListener("keydown", (e) => {
+	        if (
+	          e.key === "Escape" &&
+	          document.getElementById("blur-time-modal").style.display === "flex"
+	        ) {
+	          e.preventDefault();
+	          document.getElementById("blur-time-modal").style.display = "none";
+	          document.getElementById("btn-apply-blur")?.focus();
+	        }
+	      });
       
       const autoRedactBtn = document.getElementById("btn-auto-redact-video");
       if (autoRedactBtn) {
@@ -784,11 +924,15 @@ let currentFilePath = null;
         });
       }
 
-      document.getElementById("btn-save-vid").addEventListener("click", (e) => {
-        if (!isEdited) return;
-        e.stopPropagation();
-        document.getElementById("save-dropdown-vid").classList.toggle("show");
-      });
+	      document.getElementById("btn-save-vid").addEventListener("click", (e) => {
+	        if (!isEdited) return;
+	        e.stopPropagation();
+	        const saveDropdown = document.getElementById("save-dropdown-vid");
+	        saveDropdown.classList.toggle("show");
+	        if (saveDropdown.classList.contains("show")) {
+	          focusFirstControl(saveDropdown);
+	        }
+	      });
       document.addEventListener("click", () => {
         document.getElementById("save-dropdown-vid").classList.remove("show");
       });
@@ -892,4 +1036,3 @@ document.getElementById('video-back-normal-btn').addEventListener('click', () =>
     const btnCancel = document.getElementById("btn-cancel-vid");
     if(btnCancel) btnCancel.click();
 });
-

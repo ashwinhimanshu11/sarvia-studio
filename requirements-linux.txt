@@ -1,0 +1,10 @@
+# Python 3.11 CPU environment; resolve compatible transitive dependencies.
+# Install with: uv pip install --python yolo_venv/bin/python -r requirements-linux.txt --torch-backend cpu
+numpy==1.26.4
+opencv-python==4.9.0.80
+pillow==12.3.0
+insightface==1.0.1
+onnxruntime==1.23.2
+ultralytics==8.4.115
+torch==2.2.2
+torchvision==0.17.2

@@ -1,5 +1,11 @@
 import { formatSize, escapeHtml, matchesFileFilter } from "./utils.js";
 import { progressState } from "./progress.js";
+import {
+  focusFirstControl,
+  handleVerticalNavigation,
+  isKeyboardActivation,
+  makeKeyboardAction,
+} from "./keyboard.js";
 
 const checkedFiles = new Map();
 const exifDataCache = new Map();
@@ -193,10 +199,19 @@ function applySidebarFilter() {
       cb.checked ? checkedFiles.set(f.path, f) : checkedFiles.delete(f.path);
       updateDetailsTable();
     });
-    item.querySelector(".item-content").addEventListener("mousedown", (e) => {
-      if (e.button !== 0) return;
+    const content = item.querySelector(".item-content");
+    const toggleFilteredFile = () => {
       cb.checked = !cb.checked;
       cb.dispatchEvent(new Event("change"));
+    };
+    content.setAttribute("aria-label", `Select ${f.name}`);
+    makeKeyboardAction(content, toggleFilteredFile);
+    content.addEventListener("keydown", (e) =>
+      handleVerticalNavigation(e, content, "#file-tree .item-content"),
+    );
+    content.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      toggleFilteredFile();
     });
     tree.appendChild(item);
   });
@@ -217,7 +232,7 @@ async function showExifContextMenu(e, fileData) {
   let payload = null;
   try {
     const p = JSON.parse(copiedText);
-    if (p?.metaStudioPayload === "exif-metadata") payload = p;
+    if (p?.sarviaStudioPayload === "exif-metadata") payload = p;
   } catch (err) {}
 
   const canCopy = exifDataCache.has(fileData.path);
@@ -237,7 +252,7 @@ async function showExifContextMenu(e, fileData) {
       await window.electronAPI.copyText(
         JSON.stringify(
           {
-            metaStudioPayload: "exif-metadata",
+            sarviaStudioPayload: "exif-metadata",
             fileName: fileData.name,
             filePath: fileData.path,
             fileExtension: fileData.extension,
@@ -277,9 +292,10 @@ async function showExifContextMenu(e, fileData) {
       if (!rExif.error) exifDataCache.set(fileData.path, rExif);
       loadInspectorData();
       updateDetailsTable();
-    });
-  exifContextMenu = menu;
-}
+	    });
+	  exifContextMenu = menu;
+	  focusFirstControl(menu);
+	}
 
 function syncSelectionUI() {
   document.querySelectorAll("#details-body tr, .grid-item").forEach((r) => {
@@ -368,7 +384,7 @@ function updateDetailsTable() {
     });
 
     const handleInt = (e) => {
-      if (e.button !== 0) return;
+      if (e.type === "mousedown" && e.button !== 0) return;
       const isCb = e.target.tagName === "INPUT";
       if (isCb) e.preventDefault();
       if (isCb || e.metaKey || e.ctrlKey || selectedTableFiles.size > 0) {
@@ -386,8 +402,41 @@ function updateDetailsTable() {
       loadInspectorData();
     };
 
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-label", `Preview or select ${data.name}`);
+    gridItem.tabIndex = 0;
+    gridItem.setAttribute("role", "button");
+    gridItem.setAttribute("aria-label", `Preview or select ${data.name}`);
+
+    const handleRowKey = (e, element, selector) => {
+      if (isKeyboardActivation(e)) {
+        e.preventDefault();
+        handleInt(e);
+      } else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+        const rect = element.getBoundingClientRect();
+        showExifContextMenu(
+          {
+            preventDefault: () => e.preventDefault(),
+            stopPropagation: () => e.stopPropagation(),
+            clientX: rect.left + 16,
+            clientY: rect.top + 16,
+          },
+          data,
+        );
+      } else {
+        handleVerticalNavigation(e, element, selector);
+      }
+    };
+
     row.addEventListener("mousedown", handleInt);
     gridItem.addEventListener("mousedown", handleInt);
+    row.addEventListener("keydown", (e) =>
+      handleRowKey(e, row, "#details-tbody tr"),
+    );
+    gridItem.addEventListener("keydown", (e) =>
+      handleRowKey(e, gridItem, "#grid-container .grid-item"),
+    );
     row.addEventListener("contextmenu", (e) => showExifContextMenu(e, data));
     gridItem.addEventListener("contextmenu", (e) =>
       showExifContextMenu(e, data),
@@ -466,6 +515,43 @@ async function renderDirectory(
       childrenContainer.className = "children-container";
       node.appendChild(childrenContainer);
       let isLoaded = false;
+      const syncExpandedState = () => {
+        content.setAttribute(
+          "aria-expanded",
+          item.classList.contains("open") ? "true" : "false",
+        );
+      };
+      const toggleDirectory = async (forceOpen = null) => {
+        lastClickedNode = item;
+        const shouldOpen =
+          forceOpen === null ? !item.classList.contains("open") : forceOpen;
+        if (shouldOpen) {
+          item.classList.add("open");
+          childrenContainer.classList.add("open");
+          if (!isLoaded) {
+            await renderDirectory(entry.path, childrenContainer, cb.checked);
+            isLoaded = true;
+          }
+        } else {
+          item.classList.remove("open");
+          childrenContainer.classList.remove("open");
+        }
+        syncExpandedState();
+      };
+      content.setAttribute("aria-label", `Open ${entry.name}`);
+      makeKeyboardAction(content, () => toggleDirectory());
+      content.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight") {
+          e.preventDefault();
+          toggleDirectory(true);
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          toggleDirectory(false);
+        } else {
+          handleVerticalNavigation(e, content, "#file-tree .item-content");
+        }
+      });
+      syncExpandedState();
       cb.addEventListener("change", async () => {
         childrenContainer
           .querySelectorAll(".tree-checkbox")
@@ -488,18 +574,7 @@ async function renderDirectory(
       content.addEventListener("mousedown", async (e) => {
         if (e.button !== 0) return;
         e.stopPropagation();
-        lastClickedNode = item;
-        if (!item.classList.contains("open")) {
-          item.classList.add("open");
-          childrenContainer.classList.add("open");
-          if (!isLoaded) {
-            await renderDirectory(entry.path, childrenContainer, cb.checked);
-            isLoaded = true;
-          }
-        } else {
-          item.classList.remove("open");
-          childrenContainer.classList.remove("open");
-        }
+        toggleDirectory();
       });
     } else {
       cb.addEventListener("change", () => {
@@ -507,11 +582,10 @@ async function renderDirectory(
           ? checkedFiles.set(entry.path, entry)
           : checkedFiles.delete(entry.path);
         if (!isBatchUpdating) updateDetailsTable();
-      });
-      content.addEventListener("mousedown", (e) => {
-        if (e.button !== 0) return;
-        e.stopPropagation();
-        const check = !cb.checked;
+	      });
+	      const toggleFile = (e = {}) => {
+	        if (e.stopPropagation) e.stopPropagation();
+	        const check = !cb.checked;
         if (e.shiftKey && lastClickedNode) {
           const nodes = Array.from(document.querySelectorAll(".tree-item"));
           const cIdx = nodes.indexOf(item);
@@ -540,6 +614,15 @@ async function renderDirectory(
           .querySelectorAll(".tree-item.selected")
           .forEach((el) => el.classList.remove("selected"));
         item.classList.add("selected");
+      };
+      content.setAttribute("aria-label", `Select ${entry.name}`);
+      makeKeyboardAction(content, toggleFile);
+      content.addEventListener("keydown", (e) =>
+        handleVerticalNavigation(e, content, "#file-tree .item-content"),
+      );
+      content.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        toggleFile(e);
       });
     }
     containerElement.appendChild(node);

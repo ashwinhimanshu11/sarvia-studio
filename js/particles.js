@@ -8,6 +8,7 @@
 
 export function initParticles() {
   const canvas = document.getElementById("launcher-particle-canvas");
+  const launcher = document.getElementById("app-launcher");
   if (!canvas) return;
 
   const ctx = canvas.getContext("2d");
@@ -38,8 +39,14 @@ export function initParticles() {
 
   function resize() {
     dpr = window.devicePixelRatio || 1;
-    width = window.innerWidth;
-    height = window.innerHeight;
+    const rect = launcher?.getBoundingClientRect();
+    const nextWidth = rect?.width || window.innerWidth;
+    const nextHeight = rect?.height || window.innerHeight;
+    const prevWidth = width;
+    const prevHeight = height;
+
+    width = nextWidth;
+    height = nextHeight;
 
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
@@ -48,7 +55,6 @@ export function initParticles() {
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // If particles haven't been created yet, initialize them
     if (particles.length === 0) {
       for (let i = 0; i < PARTICLE_COUNT; i++) {
         const pal = COLOR_PALETTE[i % COLOR_PALETTE.length];
@@ -62,19 +68,50 @@ export function initParticles() {
           alpha: pal.baseAlpha * (0.6 + Math.random() * 0.4),
         });
       }
+    } else if (prevWidth > 0 && prevHeight > 0) {
+      const scaleX = width / prevWidth;
+      const scaleY = height / prevHeight;
+      particles.forEach((particle) => {
+        particle.x = Math.max(0, Math.min(width, particle.x * scaleX));
+        particle.y = Math.max(0, Math.min(height, particle.y * scaleY));
+      });
     }
   }
 
-  // Mouse move and leave listeners on window
-  window.addEventListener("mousemove", (e) => {
-    // Only track if on launcher
-    if (document.body.dataset.mode) {
+  function scheduleResize() {
+    requestAnimationFrame(() => {
+      resize();
+      requestAnimationFrame(resize);
+    });
+  }
+
+  function setMouseFromEvent(e) {
+    if (document.body.dataset.mode || !launcher) {
       mouseX = null;
       mouseY = null;
       return;
     }
-    mouseX = e.clientX;
-    mouseY = e.clientY;
+
+    const rect = launcher.getBoundingClientRect();
+    const isInsideLauncher =
+      e.clientX >= rect.left &&
+      e.clientX <= rect.right &&
+      e.clientY >= rect.top &&
+      e.clientY <= rect.bottom;
+
+    if (!isInsideLauncher) {
+      mouseX = null;
+      mouseY = null;
+      return;
+    }
+
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
+  }
+
+  // Track interaction only inside the launcher content, not the custom title bar.
+  window.addEventListener("mousemove", (e) => {
+    setMouseFromEvent(e);
   });
 
   window.addEventListener("mouseleave", () => {
@@ -82,7 +119,11 @@ export function initParticles() {
     mouseY = null;
   });
 
-  window.addEventListener("resize", resize);
+  window.addEventListener("resize", scheduleResize);
+  window.electronAPI?.onWindowMaximizedState?.(scheduleResize);
+  if (launcher && "ResizeObserver" in window) {
+    new ResizeObserver(scheduleResize).observe(launcher);
+  }
 
   function draw() {
     if (!isRunning) return;

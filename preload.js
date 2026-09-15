@@ -2,6 +2,11 @@ const { contextBridge, webUtils, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
   getFilePath: (file) => webUtils.getPathForFile(file),
+  windowControl: (action) => ipcRenderer.invoke("window-control", action),
+  onWindowMaximizedState: (callback) =>
+    ipcRenderer.on("window-maximized-state", (event, isMaximized) =>
+      callback(isMaximized),
+    ),
   readDirectory: (dirPath) => ipcRenderer.invoke("read-dir", dirPath),
   readDirectoryRecursive: (dirPath) =>
     ipcRenderer.invoke("read-dir-recursive", dirPath),
@@ -48,4 +53,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
   selectFolderDialog: (options) => ipcRenderer.invoke("select-folder-dialog", options),
   bulkMuteVideos: (payload) => ipcRenderer.invoke("bulk-mute-videos", payload),
   bulkExtractFrame: (payload) => ipcRenderer.invoke("bulk-extract-frame", payload),
+  bulkRedactImages: (payload) => ipcRenderer.invoke("bulk-redact-images", payload),
 });

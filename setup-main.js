@@ -94,6 +94,7 @@ async function performWindowsSetup(event) {
     const bundledFfmpeg = path.join(bundledWinBin, 'ffmpeg.exe');
     const bundledFfprobe = path.join(bundledWinBin, 'ffprobe.exe');
     const bundledExifTool = path.join(bundledWinBin, 'exiftool.exe');
+    const bundledExifToolFiles = path.join(bundledWinBin, 'exiftool_files');
 
     if (fs.existsSync(bundledFfmpeg)) {
       fs.copyFileSync(bundledFfmpeg, path.join(binDir, 'ffmpeg.exe'));
@@ -104,10 +105,18 @@ async function performWindowsSetup(event) {
     if (fs.existsSync(bundledExifTool)) {
       fs.copyFileSync(bundledExifTool, path.join(binDir, 'exiftool.exe'));
     }
+    if (fs.existsSync(bundledExifToolFiles)) {
+      fs.cpSync(bundledExifToolFiles, path.join(binDir, 'exiftool_files'), { recursive: true });
+    }
 
-    // 3. Download YOLO Model
-    reportProgress('Downloading YOLOv8 Model...', 0);
-    await downloadFile('https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n.pt', path.join(yoloDir, 'yolov8n.pt'), (p) => reportProgress('Downloading YOLOv8 Model...', p));
+    // 3. Setup YOLO Model
+    reportProgress('Setting up AI Models...', 0.3);
+    const bundledModel = app.isPackaged ? path.join(process.resourcesPath, 'yolov8n.pt') : path.join(__dirname, 'yolov8n.pt');
+    if (fs.existsSync(bundledModel)) {
+      fs.copyFileSync(bundledModel, path.join(yoloDir, 'yolov8n.pt'));
+    } else {
+      await downloadFile('https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n.pt', path.join(yoloDir, 'yolov8n.pt'), (p) => reportProgress('Downloading YOLOv8 Model...', p));
+    }
 
     // 4. Download Python Embeddable
     reportProgress('Downloading Python Engine...', 0);

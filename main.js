@@ -22,6 +22,25 @@ ipcMain.on("cancel-task", () => {
   });
 });
 
+ipcMain.handle("window-control", (event, action) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return { isMaximized: false };
+
+  if (action === "minimize") {
+    win.minimize();
+  } else if (action === "maximize") {
+    if (win.isMaximized()) {
+      win.unmaximize();
+    } else {
+      win.maximize();
+    }
+  } else if (action === "close") {
+    win.close();
+  }
+
+  return { isMaximized: !win.isDestroyed() && win.isMaximized() };
+});
+
 // ==========================================
 // HELPERS
 // ==========================================
@@ -232,12 +251,25 @@ function setBinaryPermissions() {
   });
 }
 
+function attachWindowStateEvents(win) {
+  const sendState = () => {
+    if (!win.isDestroyed()) {
+      win.webContents.send("window-maximized-state", win.isMaximized());
+    }
+  };
+
+  win.on("maximize", sendState);
+  win.on("unmaximize", sendState);
+  win.webContents.once("did-finish-load", sendState);
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 900,
     minHeight: 600,
+    frame: false,
     icon: path.join(__dirname, "assets", "icon.png"),
     webPreferences: {
       nodeIntegration: false,
@@ -245,6 +277,8 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  attachWindowStateEvents(mainWindow);
+  mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile("index.html");
   mainWindow.webContents.once("did-finish-load", () => {
     if (process.platform === "win32") {
@@ -720,12 +754,14 @@ ipcMain.on("open-exif-window", (event, payload) => {
     minWidth: 500,
     minHeight: 600,
     title: "EXIF Metadata - " + payload.filename,
+    frame: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  attachWindowStateEvents(exifWin);
   exifWin.setMenuBarVisibility(false);
   exifWin.loadFile("exif-window.html");
   exifWin.webContents.once("did-finish-load", () =>
@@ -745,12 +781,14 @@ ipcMain.on("open-image-editor-window", (event, payload) => {
     show: false,
     backgroundColor: '#171717',
     title: "Image Editor - " + path.basename(payload.filePath),
+    frame: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  attachWindowStateEvents(editorWin);
 
   editorWin.setMenuBarVisibility(false);
   childWindows.add(editorWin);
@@ -948,7 +986,7 @@ ipcMain.handle("save-video", async (event, payload) => {
   const { filePath, replace, trimStart, trimEnd, cropW, cropH, cropX, cropY, mute, blurData } = payload;
   
   const ext = path.extname(filePath);
-  const tempPath = path.join(os.tmpdir(), "meta_studio_video_out_" + Date.now() + ext);
+  const tempPath = path.join(os.tmpdir(), "sarvia_studio_video_out_" + Date.now() + ext);
   
   let args = [];
   
@@ -1049,7 +1087,7 @@ ipcMain.handle("prepare-video-proxy", async (event, payload) => {
   }
   
   return new Promise((resolve) => {
-    const proxyPath = path.join(os.tmpdir(), "meta_studio_proxy_" + Date.now() + ".mp4");
+    const proxyPath = path.join(os.tmpdir(), "sarvia_studio_proxy_" + Date.now() + ".mp4");
     const ffmpegPath = getBundledBinaryPath("ffmpeg");
     
     let args = ["-i", filePath];
@@ -1115,6 +1153,7 @@ ipcMain.on("open-video-editor-window", (event, payload) => {
     minWidth: 800,
     minHeight: 600,
     title: "Video Editor - " + path.basename(payload.filePath),
+    frame: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -1122,6 +1161,7 @@ ipcMain.on("open-video-editor-window", (event, payload) => {
       webSecurity: false // allow local video files for playback if needed, though often isolated context handles file:// fine if loaded locally
     },
   });
+  attachWindowStateEvents(videoWin);
   videoWin.setMenuBarVisibility(false);
   videoWin.loadFile("video-editor-window.html");
   videoWin.webContents.once("did-finish-load", () =>
@@ -1148,6 +1188,9 @@ ipcMain.handle("bulk-mute-videos", async (event, payload) => {
   cancelCurrentTask = false;
   activeChildProcesses.clear();
   const files = Array.isArray(payload?.files) ? payload.files : [];
+  const saveMode = payload?.saveMode || "new";
+  const targetOutputDir = payload?.outputDir;
+
   if (files.length === 0) return { error: "No files to mute." };
 
   const ffmpegPath = getBundledBinaryPath("ffmpeg");
@@ -1155,6 +1198,7 @@ ipcMain.handle("bulk-mute-videos", async (event, payload) => {
 
   const results = [];
   const generatedFiles = [];
+  const tempFilesToReplace = [];
 
   for (let i = 0; i < files.length; i++) {
     if (cancelCurrentTask) break;
@@ -1166,11 +1210,25 @@ ipcMain.handle("bulk-mute-videos", async (event, payload) => {
     }
 
     const parsed = path.parse(filePath);
-    let outputPath = path.join(parsed.dir, `${parsed.name}_muted${parsed.ext}`);
-    let counter = 2;
-    while (fs.existsSync(outputPath) && outputPath !== filePath) {
-      outputPath = path.join(parsed.dir, `${parsed.name}_muted_${counter}${parsed.ext}`);
-      counter++;
+    let outputPath;
+
+    if (saveMode === "replace") {
+      outputPath = path.join(parsed.dir, `.${parsed.name}_mute_temp_${Date.now()}_${i}${parsed.ext}`);
+      tempFilesToReplace.push({ tempPath: outputPath, originalPath: filePath });
+    } else if (targetOutputDir && fs.existsSync(targetOutputDir)) {
+      outputPath = path.join(targetOutputDir, `${parsed.name}_muted${parsed.ext}`);
+      let counter = 2;
+      while (fs.existsSync(outputPath) || generatedFiles.includes(outputPath)) {
+        outputPath = path.join(targetOutputDir, `${parsed.name}_muted_${counter}${parsed.ext}`);
+        counter++;
+      }
+    } else {
+      outputPath = path.join(parsed.dir, `${parsed.name}_muted${parsed.ext}`);
+      let counter = 2;
+      while (fs.existsSync(outputPath) && outputPath !== filePath) {
+        outputPath = path.join(parsed.dir, `${parsed.name}_muted_${counter}${parsed.ext}`);
+        counter++;
+      }
     }
     generatedFiles.push(outputPath);
 
@@ -1204,6 +1262,19 @@ ipcMain.handle("bulk-mute-videos", async (event, payload) => {
     return { error: "Task cancelled by user. Generated files were removed." };
   }
 
+  if (saveMode === "replace") {
+    for (const item of tempFilesToReplace) {
+      if (fs.existsSync(item.tempPath)) {
+        try {
+          fs.copyFileSync(item.tempPath, item.originalPath);
+          fs.unlinkSync(item.tempPath);
+        } catch (err) {
+          console.error("Failed to replace original video:", item.originalPath, err);
+        }
+      }
+    }
+  }
+
   const failed = results.filter(r => r.error);
   if (failed.length > 0) return { error: `${failed.length} file(s) failed to mute.`, results };
   
@@ -1222,15 +1293,17 @@ ipcMain.handle("bulk-extract-frame", async (event, payload) => {
   const ffmpegPath = getBundledBinaryPath("ffmpeg");
   if (!fs.existsSync(ffmpegPath)) return { error: "Bundled FFmpeg binary not found." };
 
-  // Determine single output directory outside the input folder
-  let outputDir;
-  if (payload?.sourceFolder && typeof payload.sourceFolder === "string" && payload.sourceFolder.trim()) {
-    const trimmedSource = payload.sourceFolder.trim().replace(/[/\\]+$/, "");
-    const parsedSource = path.parse(trimmedSource);
-    outputDir = path.join(parsedSource.dir, `${parsedSource.base}_Extracted_Frames`);
-  } else {
-    const firstDir = path.dirname(files[0]);
-    outputDir = path.join(firstDir, "Extracted_Frames");
+  // Use provided outputDir if given, else fallback to source folder / first file folder
+  let outputDir = payload?.outputDir;
+  if (!outputDir || typeof outputDir !== "string" || !outputDir.trim()) {
+    if (payload?.sourceFolder && typeof payload.sourceFolder === "string" && payload.sourceFolder.trim()) {
+      const trimmedSource = payload.sourceFolder.trim().replace(/[/\\]+$/, "");
+      const parsedSource = path.parse(trimmedSource);
+      outputDir = path.join(parsedSource.dir, `${parsedSource.base}_Extracted_Frames`);
+    } else {
+      const firstDir = path.dirname(files[0]);
+      outputDir = path.join(firstDir, "Extracted_Frames");
+    }
   }
 
   try {
@@ -1308,4 +1381,129 @@ ipcMain.handle("bulk-extract-frame", async (event, payload) => {
   return { success: true, results, outputDir };
 });
 
+ipcMain.handle("bulk-redact-images", async (event, payload) => {
+  cancelCurrentTask = false;
+  activeChildProcesses.clear();
+  const files = Array.isArray(payload?.files) ? payload.files : [];
+  const mode = payload?.mode || "blur";
+  const target = payload?.target || "faces";
+  const saveMode = payload?.saveMode || "new";
+  const targetOutputDir = payload?.outputDir;
 
+  if (files.length === 0) return { error: "No files to redact." };
+
+  const baseDir = app.isPackaged ? process.resourcesPath : __dirname;
+  const pythonPath = process.platform === "win32"
+    ? path.join(app.getPath("userData"), "yolo", "python", "python.exe")
+    : path.join(baseDir, "yolo_venv", "bin", "python");
+
+  const insightScript = process.platform === "win32"
+    ? path.join(app.getPath("userData"), "yolo", "insightface_redact.py")
+    : path.join(baseDir, "insightface_redact.py");
+  const yoloScript = process.platform === "win32"
+    ? path.join(app.getPath("userData"), "yolo", "yolo_redact.py")
+    : path.join(baseDir, "yolo_redact.py");
+
+  const scriptPath = fs.existsSync(insightScript) ? insightScript : yoloScript;
+
+  const results = [];
+  const generatedFiles = [];
+  const tempFilesToReplace = [];
+
+  for (let i = 0; i < files.length; i++) {
+    if (cancelCurrentTask) break;
+
+    const filePath = files[i];
+    if (!fs.existsSync(filePath)) {
+      results.push({ inputPath: filePath, error: "File not found." });
+      continue;
+    }
+
+    const parsed = path.parse(filePath);
+    let outputPath;
+
+    if (saveMode === "replace") {
+      outputPath = path.join(parsed.dir, `.${parsed.name}_redact_temp_${Date.now()}_${i}${parsed.ext}`);
+      tempFilesToReplace.push({ tempPath: outputPath, originalPath: filePath });
+    } else if (targetOutputDir && fs.existsSync(targetOutputDir)) {
+      outputPath = path.join(targetOutputDir, `${parsed.name}_redacted${parsed.ext}`);
+      let counter = 2;
+      while (fs.existsSync(outputPath) || generatedFiles.includes(outputPath)) {
+        outputPath = path.join(targetOutputDir, `${parsed.name}_redacted_${counter}${parsed.ext}`);
+        counter++;
+      }
+    } else {
+      outputPath = path.join(parsed.dir, `${parsed.name}_redacted${parsed.ext}`);
+      let counter = 2;
+      while (fs.existsSync(outputPath) && outputPath !== filePath) {
+        outputPath = path.join(parsed.dir, `${parsed.name}_redacted_${counter}${parsed.ext}`);
+        counter++;
+      }
+    }
+    generatedFiles.push(outputPath);
+
+    event.sender.send("task-progress", {
+      title: "Auto-Redacting Images",
+      current: i,
+      total: files.length,
+      detail: `Scanning & Redacting: ${parsed.base}`
+    });
+
+    const result = await new Promise((resolve) => {
+      const child = exec(`"${pythonPath}" "${scriptPath}" "${filePath}" "${outputPath}" "${mode}" "${target}"`, (error, stdout, stderr) => {
+        activeChildProcesses.delete(child);
+        if (error && error.killed) {
+          resolve({ inputPath: filePath, outputPath, error: "Cancelled" });
+        } else if (error) {
+          resolve({ inputPath: filePath, outputPath, error: stderr || error.message });
+        } else {
+          try {
+            const jsonMatch = stdout.match(/\{.*"success".*\}/);
+            const resultStr = jsonMatch ? jsonMatch[0] : stdout;
+            const resObj = JSON.parse(resultStr);
+            if (resObj.success) {
+              resolve({ inputPath: filePath, outputPath, success: true, count: resObj.count });
+            } else {
+              resolve({ inputPath: filePath, outputPath, error: resObj.error || "Redaction failed" });
+            }
+          } catch(e) {
+            if (fs.existsSync(outputPath)) {
+              resolve({ inputPath: filePath, outputPath, success: true });
+            } else {
+              resolve({ inputPath: filePath, outputPath, error: "Failed to parse Python response: " + stdout });
+            }
+          }
+        }
+      });
+      activeChildProcesses.add(child);
+    });
+
+    results.push(result);
+  }
+
+  if (cancelCurrentTask) {
+    await new Promise(r => setTimeout(r, 600));
+    for (const file of generatedFiles) {
+      try { if (fs.existsSync(file)) fs.unlinkSync(file); } catch(e) {}
+    }
+    return { error: "Task cancelled by user. Generated files were removed." };
+  }
+
+  if (saveMode === "replace") {
+    for (const item of tempFilesToReplace) {
+      if (fs.existsSync(item.tempPath)) {
+        try {
+          fs.copyFileSync(item.tempPath, item.originalPath);
+          fs.unlinkSync(item.tempPath);
+        } catch (err) {
+          console.error("Failed to replace original image:", item.originalPath, err);
+        }
+      }
+    }
+  }
+
+  const failed = results.filter(r => r.error);
+  if (failed.length > 0) return { error: `${failed.length} file(s) failed to redact.`, results };
+
+  return { success: true, results };
+});

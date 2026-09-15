@@ -12,6 +12,7 @@
       href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
     />
     <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./js/titlebar.js"></script>
 
     <script>
       if (localStorage.getItem("gts-theme") === "dark") {
@@ -21,11 +22,12 @@
     <style>
       body {
         display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        padding: 0;
-        background-color: var(--bg-base);
-      }
+	        flex-direction: column;
+	        overflow: hidden;
+	        padding: var(--app-titlebar-height) 0 0;
+	        box-sizing: border-box;
+	        background-color: var(--bg-base);
+	      }
       .exif-editor-header {
         padding: 22px 28px 16px;
         background: var(--bg-panel);
@@ -178,6 +180,25 @@
     </style>
   </head>
   <body>
+    <div class="app-titlebar">
+      <div class="app-titlebar-drag">
+        <div class="app-titlebar-brand">
+          <span class="material-symbols-rounded">manage_search</span>
+          <span class="app-titlebar-title">EXIF Metadata</span>
+        </div>
+      </div>
+      <div class="app-window-controls">
+        <button type="button" class="app-window-control" data-window-action="minimize" title="Minimize" aria-label="Minimize window">
+          <span class="material-symbols-rounded">remove</span>
+        </button>
+        <button type="button" class="app-window-control" data-window-action="maximize" title="Maximize" aria-label="Maximize window">
+          <span class="material-symbols-rounded">crop_square</span>
+        </button>
+        <button type="button" class="app-window-control app-window-close" data-window-action="close" title="Close" aria-label="Close window">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+    </div>
     <div class="exif-editor-header">
       <p>Editable ExifTool Output</p>
       <h2 id="win-filename">Loading Data...</h2>
@@ -378,6 +399,13 @@
         document.getElementById("selection-status").textContent = message;
       }
 
+      function focusFirstControl(container) {
+        const first = container?.querySelector(
+          'button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+        if (first) first.focus();
+      }
+
       function getChanges() {
         const edits = [];
         editedValues.forEach((value, tag) => {
@@ -479,11 +507,14 @@
       }
 
       function openDateModal() {
-        document.getElementById("date-modal").classList.add("active");
+        const modal = document.getElementById("date-modal");
+        modal.classList.add("active");
+        focusFirstControl(modal);
       }
 
       function closeDateModal() {
         document.getElementById("date-modal").classList.remove("active");
+        document.getElementById("randomize-date-btn").focus();
       }
 
       window.electronAPI.onRenderExif((payload) => {
@@ -523,6 +554,23 @@
       document
         .getElementById("cancel-randomize-btn")
         .addEventListener("click", closeDateModal);
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          const modal = document.getElementById("date-modal");
+          if (modal.classList.contains("active")) {
+            event.preventDefault();
+            closeDateModal();
+          }
+        } else if (
+          currentPayload &&
+          (event.ctrlKey || event.metaKey) &&
+          event.key.toLowerCase() === "s"
+        ) {
+          event.preventDefault();
+          document.getElementById("apply-selected-btn").click();
+        }
+      });
 
       document
         .getElementById("confirm-randomize-btn")

@@ -5,6 +5,7 @@ import {
   mediaKind,
   matchesFileFilter,
 } from "./utils.js";
+import { handleVerticalNavigation, makeKeyboardAction } from "./keyboard.js";
 
 let converterAllFiles = [];
 let converterVisibleFiles = [];
@@ -166,12 +167,27 @@ function renderConverterFiles() {
       cb.checked
         ? converterSelectedFiles.add(file.path)
         : converterSelectedFiles.delete(file.path);
+      row.setAttribute("aria-checked", cb.checked ? "true" : "false");
       updateConverterCount();
     });
-    row.addEventListener("mousedown", (e) => {
-      if (e.button !== 0 || e.target === cb) return;
+
+    const toggleRow = () => {
       cb.checked = !cb.checked;
       cb.dispatchEvent(new Event("change"));
+    };
+
+    row.tabIndex = 0;
+    row.setAttribute("role", "checkbox");
+    row.setAttribute("aria-checked", cb.checked ? "true" : "false");
+    row.setAttribute("aria-label", `Select ${file.name}`);
+    makeKeyboardAction(row, toggleRow, null);
+    row.addEventListener("keydown", (e) =>
+      handleVerticalNavigation(e, row, ".converter-file-row"),
+    );
+
+    row.addEventListener("mousedown", (e) => {
+      if (e.button !== 0 || e.target === cb) return;
+      toggleRow();
     });
     list.appendChild(row);
   });

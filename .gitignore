@@ -1,6 +1,9 @@
 bin/
 node_modules/
 .DS_Store
+._*
+.agents/
+.codex/
 yolo_venv/
 dist/
 __pycache__/

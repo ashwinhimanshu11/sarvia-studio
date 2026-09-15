@@ -1,7 +1,14 @@
-import { escapeHtml, imageExtensions } from "./utils.js";
+import { escapeHtml, imageExtensions, promptBulkSaveOptions } from "./utils.js";
+import {
+  focusFirstControl,
+  handleVerticalNavigation,
+  isTypingTarget,
+  makeKeyboardAction,
+} from "./keyboard.js";
 
 let currentSelectedImagePath = null;
 let currentSelectedImageExtension = null;
+let bulkRedactFilesList = [];
 
 export function initEditor() {
   document
@@ -14,18 +21,214 @@ export function initEditor() {
 
   document.getElementById("editor-edit-btn").addEventListener("click", () => {
     if (currentSelectedImagePath) {
-      
       document.getElementById('editor-edit-btn').style.display = 'none';
       document.getElementById('editor-right-resizer').style.display = 'block';
       document.getElementById('editor-options-panel').style.display = 'flex';
       window.startImageEditor({ filePath: currentSelectedImagePath });
-
     }
+  });
+
+  setupBulkRedactLogic();
+}
+
+function setupBulkRedactLogic() {
+  const filesOpt = document.getElementById("bulk-redact-files-opt");
+  if (filesOpt) {
+    filesOpt.addEventListener("click", async () => {
+      const result = await window.electronAPI.selectFilesDialog();
+      if (!result.canceled && result.filePaths.length > 0) {
+        bulkRedactFilesList = result.filePaths.filter((p) => {
+          const ext = p.split(".").pop().toLowerCase();
+          return imageExtensions.includes(ext);
+        });
+        showBulkRedactContainer();
+      }
+    });
+  }
+
+  const folderOpt = document.getElementById("bulk-redact-folder-opt");
+  if (folderOpt) {
+    folderOpt.addEventListener("click", async () => {
+      const result = await window.electronAPI.selectFolderDialog();
+      if (!result.canceled && result.filePaths.length > 0) {
+        const folderPath = result.filePaths[0];
+        const entries = await window.electronAPI.readDirectoryRecursive(folderPath);
+        if (!entries.error) {
+          bulkRedactFilesList = entries
+            .filter((e) => !e.isDirectory && imageExtensions.includes(e.extension))
+            .map((e) => e.path);
+          showBulkRedactContainer();
+        }
+      }
+    });
+  }
+
+  const cancelBtn = document.getElementById("cancel-bulk-redact-btn");
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", () => {
+      bulkRedactFilesList = [];
+      const bulkContainer = document.getElementById("editor-bulk-redact-container");
+      if (bulkContainer) bulkContainer.style.display = "none";
+      const emptyState = document.getElementById("editor-empty-state");
+      if (emptyState) emptyState.style.display = "flex";
+    });
+  }
+
+  const performBtn = document.getElementById("perform-bulk-redact-btn");
+  if (performBtn) {
+    performBtn.addEventListener("click", async () => {
+      const checkboxes = document.querySelectorAll(".bulk-redact-cb:checked");
+      const selectedFiles = Array.from(checkboxes).map((cb) => cb.dataset.path);
+      if (selectedFiles.length === 0) return;
+
+      const saveOpt = await promptBulkSaveOptions({
+        title: "Bulk Auto-Redaction Save Options",
+        description: "Choose how you want to save the redacted images:",
+        allowReplace: true,
+        newLabel: "Save as New Images...",
+        newDesc: "Choose a destination folder to export the redacted images",
+      });
+
+      if (saveOpt.choice === "cancel") return;
+
+      const mode = document.getElementById("bulk-redact-mode")?.value || "blur";
+
+      // Show progress modal
+      const progressModal = document.getElementById("progress-modal");
+      const progressTitle = document.getElementById("progress-title");
+      const progressFill = document.getElementById("progress-fill");
+      const progressPercent = document.getElementById("progress-percent");
+      const progressCount = document.getElementById("progress-count");
+      const progressDetail = document.getElementById("progress-detail");
+      const cancelProgressBtn = document.getElementById("cancel-progress-btn");
+
+      progressModal.classList.add("active");
+      progressTitle.textContent = "Auto-Redacting Images";
+      progressFill.style.width = "0%";
+      progressPercent.textContent = "0%";
+      progressCount.textContent = `0 / ${selectedFiles.length}`;
+      progressDetail.textContent = "Starting...";
+      if (cancelProgressBtn) cancelProgressBtn.style.display = "inline-flex";
+
+      const res = await window.electronAPI.bulkRedactImages({
+        files: selectedFiles,
+        mode: mode,
+        target: "faces",
+        saveMode: saveOpt.choice,
+        outputDir: saveOpt.outputDir,
+      });
+
+      if (res.error) {
+        progressTitle.textContent = "Redaction Failed";
+        progressDetail.textContent = res.error;
+        if (cancelProgressBtn) cancelProgressBtn.style.display = "none";
+        setTimeout(() => {
+          progressModal.classList.remove("active");
+          if (cancelProgressBtn) cancelProgressBtn.style.display = "inline-flex";
+        }, 2500);
+      } else {
+        const successCount = res.results ? res.results.filter((r) => r.success).length : 0;
+        progressTitle.textContent = "Process Complete";
+        progressFill.style.width = "100%";
+        progressPercent.textContent = "100%";
+        progressCount.textContent = `${successCount} / ${selectedFiles.length}`;
+        progressDetail.textContent = `Successfully redacted ${successCount} image(s).`;
+        if (cancelProgressBtn) cancelProgressBtn.style.display = "none";
+
+        setTimeout(() => {
+          progressModal.classList.remove("active");
+          if (cancelProgressBtn) cancelProgressBtn.style.display = "inline-flex";
+          document.getElementById("cancel-bulk-redact-btn").click();
+        }, 1600);
+      }
+    });
+  }
+}
+
+function showBulkRedactContainer() {
+  const emptyState = document.getElementById("editor-empty-state");
+  if (emptyState) emptyState.style.display = "none";
+  const previewContainer = document.getElementById("editor-preview-container");
+  if (previewContainer) previewContainer.style.display = "none";
+  const bulkContainer = document.getElementById("editor-bulk-redact-container");
+  if (!bulkContainer) return;
+  bulkContainer.style.display = "flex";
+
+  const countEl = document.getElementById("bulk-redact-count");
+  if (countEl) countEl.textContent = `${bulkRedactFilesList.length} image(s) selected`;
+
+  const listEl = document.getElementById("bulk-redact-list");
+  if (!listEl) return;
+  listEl.innerHTML = "";
+
+  const performBtn = document.getElementById("perform-bulk-redact-btn");
+
+  if (bulkRedactFilesList.length === 0) {
+    listEl.innerHTML = "<div style='color: var(--text-muted); padding: 10px;'>No valid image files found in the selection.</div>";
+    if (performBtn) performBtn.disabled = true;
+    return;
+  }
+
+  if (performBtn) performBtn.disabled = false;
+
+  bulkRedactFilesList.forEach((path) => {
+    const item = document.createElement("label");
+    item.style.padding = "8px";
+    item.style.borderBottom = "1px solid var(--border-color)";
+    item.style.fontSize = "13px";
+    item.style.wordBreak = "break-all";
+    item.style.display = "flex";
+    item.style.alignItems = "center";
+    item.style.gap = "10px";
+    item.style.cursor = "pointer";
+    item.style.transition = "background 0.2s";
+
+    item.addEventListener("mouseenter", () => (item.style.background = "var(--bg-hover)"));
+    item.addEventListener("mouseleave", () => (item.style.background = "transparent"));
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = true;
+    cb.className = "bulk-redact-cb";
+    cb.dataset.path = path;
+    cb.style.cursor = "pointer";
+    cb.style.width = "14px";
+    cb.style.height = "14px";
+    cb.style.accentColor = "var(--gts-teal)";
+    cb.style.margin = "0";
+
+    cb.addEventListener("change", () => {
+      const selectedCount = document.querySelectorAll(".bulk-redact-cb:checked").length;
+      if (countEl) countEl.textContent = `${selectedCount} image(s) selected`;
+      if (performBtn) performBtn.disabled = selectedCount === 0;
+      item.setAttribute("aria-checked", cb.checked ? "true" : "false");
+    });
+
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = path;
+    labelSpan.style.flex = "1";
+
+    item.appendChild(cb);
+    item.appendChild(labelSpan);
+    item.tabIndex = 0;
+    item.setAttribute("role", "checkbox");
+    item.setAttribute("aria-checked", "true");
+    item.setAttribute("aria-label", `Select ${path}`);
+    makeKeyboardAction(item, () => {
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event("change"));
+    }, null);
+    item.addEventListener("keydown", (e) =>
+      handleVerticalNavigation(e, item, "#bulk-redact-list label"),
+    );
+    listEl.appendChild(item);
   });
 }
 
 export async function loadEditorFolder(path) {
   document.getElementById("editor-folder-input").value = path;
+  const bulkContainer = document.getElementById("editor-bulk-redact-container");
+  if (bulkContainer) bulkContainer.style.display = "none";
   document.getElementById("editor-empty-state").style.display = "flex";
   document.getElementById("editor-preview-container").style.display = "none";
   currentSelectedImagePath = null;
@@ -70,13 +273,16 @@ async function renderEditorDirectory(path, containerElement) {
     content.style.minWidth = "0";
     content.innerHTML = `${toggle}<span class="material-symbols-rounded icon">${iconName}</span><span class="name" title="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}</span>`;
     
-    if (!entry.isDirectory) {
-      const printBtn = document.createElement("span");
-      printBtn.className = "material-symbols-rounded icon-action";
-      printBtn.textContent = "print";
-      printBtn.style.marginLeft = "auto";
-      printBtn.style.padding = "4px";
-      printBtn.style.fontSize = "16px";
+      if (!entry.isDirectory) {
+        const printBtn = document.createElement("span");
+        printBtn.className = "material-symbols-rounded icon-action";
+        printBtn.textContent = "print";
+        printBtn.tabIndex = 0;
+        printBtn.setAttribute("role", "button");
+        printBtn.setAttribute("aria-label", `Print ${entry.name}`);
+        printBtn.style.marginLeft = "auto";
+        printBtn.style.padding = "4px";
+        printBtn.style.fontSize = "16px";
       printBtn.style.cursor = "pointer";
       printBtn.style.display = "none";
       printBtn.title = "Print Image";
@@ -89,11 +295,19 @@ async function renderEditorDirectory(path, containerElement) {
         e.stopPropagation();
         printImage(entry.path);
       });
+      makeKeyboardAction(printBtn, (e) => {
+        e.stopPropagation();
+        printImage(entry.path);
+      });
       
       content.appendChild(printBtn);
       
       item.addEventListener("mouseenter", () => printBtn.style.display = "block");
       item.addEventListener("mouseleave", () => printBtn.style.display = "none");
+      item.addEventListener("focusin", () => printBtn.style.display = "block");
+      item.addEventListener("focusout", (e) => {
+        if (!item.contains(e.relatedTarget)) printBtn.style.display = "none";
+      });
     }
     
     item.appendChild(content);
@@ -104,11 +318,16 @@ async function renderEditorDirectory(path, containerElement) {
       childrenContainer.className = "children-container";
       node.appendChild(childrenContainer);
       let isLoaded = false;
-      
-      content.addEventListener("mousedown", async (e) => {
-        if (e.button !== 0) return;
-        e.stopPropagation();
-        if (!item.classList.contains("open")) {
+      const syncExpandedState = () => {
+        content.setAttribute(
+          "aria-expanded",
+          item.classList.contains("open") ? "true" : "false",
+        );
+      };
+      const toggleDirectory = async (forceOpen = null) => {
+        const shouldOpen =
+          forceOpen === null ? !item.classList.contains("open") : forceOpen;
+        if (shouldOpen) {
           item.classList.add("open");
           childrenContainer.classList.add("open");
           if (!isLoaded) {
@@ -119,30 +338,48 @@ async function renderEditorDirectory(path, containerElement) {
           item.classList.remove("open");
           childrenContainer.classList.remove("open");
         }
+        syncExpandedState();
+      };
+      content.setAttribute("aria-label", `Open ${entry.name}`);
+      makeKeyboardAction(content, () => toggleDirectory());
+      content.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight") {
+          e.preventDefault();
+          toggleDirectory(true);
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          toggleDirectory(false);
+        } else {
+          handleVerticalNavigation(e, content, "#editor-file-tree .item-content");
+        }
       });
-    } else {
+      syncExpandedState();
+      
       content.addEventListener("mousedown", async (e) => {
         if (e.button !== 0) return;
         e.stopPropagation();
+        toggleDirectory();
+      });
+    } else {
+      const selectImage = async (e = {}) => {
+        if (e.stopPropagation) e.stopPropagation();
         
         document
           .querySelectorAll("#editor-file-tree .tree-item.selected")
           .forEach((el) => el.classList.remove("selected"));
         item.classList.add("selected");
 
-        // Handle Image Selection
         currentSelectedImagePath = entry.path;
         currentSelectedImageExtension = entry.extension;
         
         document.getElementById("editor-empty-state").style.display = "none";
+        const bulkContainer = document.getElementById("editor-bulk-redact-container");
+        if (bulkContainer) bulkContainer.style.display = "none";
         const previewContainer = document.getElementById("editor-preview-container");
         previewContainer.style.display = "flex";
         
         const previewImg = document.getElementById("editor-preview-img");
         
-        // Use getFileDetails to get the base64 thumbnail if small, or direct load via custom protocol if needed
-        // Since we are not doing a full photo editor yet, and standard img tag can't directly load absolute paths in isolated context without a protocol,
-        // we'll fetch details which returns thumbnail for smaller files, or we can just try to use a local path if webPreferences allow it.
         document.body.style.cursor = "wait";
         const details = await window.electronAPI.getFileDetails(entry.path);
         document.body.style.cursor = "default";
@@ -150,10 +387,18 @@ async function renderEditorDirectory(path, containerElement) {
         if (details.thumbnail) {
           previewImg.src = details.thumbnail;
         } else {
-          // Fallback, we might not have a thumbnail for large files or we should generate one
           previewImg.src = "";
           previewImg.alt = "Preview not available for this large file.";
         }
+      };
+      content.setAttribute("aria-label", `Preview ${entry.name}`);
+      makeKeyboardAction(content, selectImage);
+      content.addEventListener("keydown", (e) =>
+        handleVerticalNavigation(e, content, "#editor-file-tree .item-content"),
+      );
+      content.addEventListener("mousedown", async (e) => {
+        if (e.button !== 0) return;
+        await selectImage(e);
       });
     }
     containerElement.appendChild(node);
@@ -269,7 +514,14 @@ let currentFilePath = null;
         overlayContainer.style.height = `${canvasData.height}px`;
       }
 
-      window.addEventListener("resize", syncOverlayPosition);
+	      window.addEventListener("resize", syncOverlayPosition);
+
+	      function syncBoxElement(boxEl, box, imgW, imgH) {
+	        boxEl.style.left = `${(box.x / imgW) * 100}%`;
+	        boxEl.style.top = `${(box.y / imgH) * 100}%`;
+	        boxEl.style.width = `${(box.w / imgW) * 100}%`;
+	        boxEl.style.height = `${(box.h / imgH) * 100}%`;
+	      }
 
       function applyRedactionsToImage() {
         const image = document.getElementById("editor-preview-img");
@@ -439,11 +691,52 @@ let currentFilePath = null;
           boxEl.className = "redact-box-overlay";
           boxEl.style.left = `${leftPct}%`;
           boxEl.style.top = `${topPct}%`;
-          boxEl.style.width = `${widthPct}%`;
-          boxEl.style.height = `${heightPct}%`;
-          boxEl.title = "Drag to move, corner to resize";
+	          boxEl.style.width = `${widthPct}%`;
+	          boxEl.style.height = `${heightPct}%`;
+	          boxEl.title = "Drag to move, corner to resize";
+	          boxEl.tabIndex = 0;
+	          boxEl.setAttribute("role", "group");
+	          boxEl.setAttribute(
+	            "aria-label",
+	            "Redaction box. Use arrow keys to move, Shift plus arrow keys to resize, Delete to remove.",
+	          );
+	          boxEl.addEventListener("keydown", (e) => {
+	            const handledKeys = [
+	              "ArrowUp",
+	              "ArrowDown",
+	              "ArrowLeft",
+	              "ArrowRight",
+	              "Delete",
+	              "Backspace",
+	            ];
+	            if (!handledKeys.includes(e.key)) return;
 
-          const removeBtn = document.createElement("button");
+	            e.preventDefault();
+	            e.stopPropagation();
+
+	            if (e.key === "Delete" || e.key === "Backspace") {
+	              removeRedactionBox(box.id);
+	              return;
+	            }
+
+	            const step = e.altKey ? 1 : 10;
+	            if (e.shiftKey) {
+	              if (e.key === "ArrowLeft") box.w = Math.max(4, box.w - step);
+	              if (e.key === "ArrowRight") box.w = Math.min(imgW - box.x, box.w + step);
+	              if (e.key === "ArrowUp") box.h = Math.max(4, box.h - step);
+	              if (e.key === "ArrowDown") box.h = Math.min(imgH - box.y, box.h + step);
+	            } else {
+	              if (e.key === "ArrowLeft") box.x = Math.max(0, box.x - step);
+	              if (e.key === "ArrowRight") box.x = Math.min(imgW - box.w, box.x + step);
+	              if (e.key === "ArrowUp") box.y = Math.max(0, box.y - step);
+	              if (e.key === "ArrowDown") box.y = Math.min(imgH - box.h, box.y + step);
+	            }
+
+	            syncBoxElement(boxEl, box, imgW, imgH);
+	            applyRedactionsToImage();
+	          });
+
+	          const removeBtn = document.createElement("button");
           removeBtn.className = "redact-remove-btn";
           removeBtn.title = "Remove this redaction";
           removeBtn.innerHTML = '<span class="material-symbols-rounded">close</span>';
@@ -576,18 +869,61 @@ let currentFilePath = null;
         document.getElementById("btn-cancel").disabled = false;
       }
       
-      function disableSave() {
-        isEdited = false;
-        document.getElementById("btn-save").disabled = true;
-        document.getElementById("btn-cancel").disabled = true;
-        document.getElementById("save-dropdown").classList.remove("show");
-      }
-      
-      document.getElementById("btn-save").addEventListener("click", (e) => {
-        if (!isEdited) return;
-        e.stopPropagation();
-        document.getElementById("save-dropdown").classList.toggle("show");
-      });
+	      function disableSave() {
+	        isEdited = false;
+	        document.getElementById("btn-save").disabled = true;
+	        document.getElementById("btn-cancel").disabled = true;
+	        document.getElementById("save-dropdown").classList.remove("show");
+	      }
+
+	      document.addEventListener("keydown", (e) => {
+	        if (!cropper || (!isCroppingMode && !isManualRedactMode)) return;
+	        if (isTypingTarget(e.target) || e.ctrlKey || e.metaKey) return;
+
+	        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+	          const data = cropper.getData(true);
+	          if (!data || data.width <= 0 || data.height <= 0) return;
+
+	          const image = document.getElementById("editor-preview-img");
+	          const imgW = image.naturalWidth || image.width;
+	          const imgH = image.naturalHeight || image.height;
+	          const step = e.altKey ? 1 : 10;
+	          const next = { ...data };
+
+	          e.preventDefault();
+	          if (e.shiftKey) {
+	            if (e.key === "ArrowLeft") next.width = Math.max(4, data.width - step);
+	            if (e.key === "ArrowRight") next.width = Math.min(imgW - data.x, data.width + step);
+	            if (e.key === "ArrowUp") next.height = Math.max(4, data.height - step);
+	            if (e.key === "ArrowDown") next.height = Math.min(imgH - data.y, data.height + step);
+	          } else {
+	            if (e.key === "ArrowLeft") next.x = Math.max(0, data.x - step);
+	            if (e.key === "ArrowRight") next.x = Math.min(imgW - data.width, data.x + step);
+	            if (e.key === "ArrowUp") next.y = Math.max(0, data.y - step);
+	            if (e.key === "ArrowDown") next.y = Math.min(imgH - data.height, data.y + step);
+	          }
+
+	          cropper.setData(next);
+	        } else if (e.key === "Enter") {
+	          e.preventDefault();
+	          document
+	            .getElementById(isManualRedactMode ? "btn-redact-apply" : "btn-crop")
+	            ?.click();
+	        } else if (e.key === "Escape" && isManualRedactMode) {
+	          e.preventDefault();
+	          document.getElementById("btn-redact-cancel")?.click();
+	        }
+	      });
+	      
+	      document.getElementById("btn-save").addEventListener("click", (e) => {
+	        if (!isEdited) return;
+	        e.stopPropagation();
+	        const saveDropdown = document.getElementById("save-dropdown");
+	        saveDropdown.classList.toggle("show");
+	        if (saveDropdown.classList.contains("show")) {
+	          focusFirstControl(saveDropdown);
+	        }
+	      });
       
       document.addEventListener("click", () => {
         document.getElementById("save-dropdown").classList.remove("show");
@@ -1112,40 +1448,6 @@ let currentFilePath = null;
       document.getElementById("btn-save-replace").addEventListener("click", () => handleSave(true));
       document.getElementById("btn-save-new").addEventListener("click", () => handleSave(false));
       
-    // Custom Dropdown Logic
-      function setupDropdown(id, inputId, labelId, iconId) {
-        const btn = document.getElementById('btn-' + id);
-        const content = document.getElementById('content-' + id);
-        const input = document.getElementById(inputId);
-        const label = document.getElementById(labelId);
-        const icon = document.getElementById(iconId);
-        
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          document.querySelectorAll('.custom-dropdown-content').forEach(c => {
-            if(c !== content) c.classList.remove('show');
-          });
-          content.classList.toggle('show');
-        });
-        
-        content.querySelectorAll('.custom-dropdown-item').forEach(item => {
-          item.addEventListener('click', (e) => {
-            input.value = item.dataset.value;
-            const iconText = item.querySelector('.material-symbols-rounded').textContent;
-            label.textContent = item.textContent.replace(iconText, '').trim();
-            icon.textContent = iconText;
-            content.classList.remove('show');
-          });
-        });
-      }
-      
-      setupDropdown('dd-target', 'redact-target', 'target-label', 'target-icon');
-      setupDropdown('dd-mode', 'redact-mode', 'mode-label', 'mode-icon');
-      
-      document.addEventListener('click', () => {
-        document.querySelectorAll('.custom-dropdown-content').forEach(c => c.classList.remove('show'));
-      });
-      
       function setDropdownsDisabled(disabled) {
         const ddt = document.getElementById('dd-target');
         const ddm = document.getElementById('dd-mode');
@@ -1171,4 +1473,3 @@ document.getElementById('editor-back-normal-btn').addEventListener('click', () =
     const btnCancel = document.getElementById("btn-cancel");
     if(btnCancel) btnCancel.click(); // Reset state
 });
-

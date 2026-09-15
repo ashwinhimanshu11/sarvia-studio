@@ -49,6 +49,7 @@
         "Straighten adjustment control",
         "Manual Blur / Pixelation region drawing",
         "Automated AI Redaction via YOLOv8 (detects faces, plates, sensitive objects)",
+        "Bulk Auto-Redaction (Batch face detection and redaction across selected files/folders via #dd-bulk-redact with mode choices: Blur, Black Box, White Box)",
         "Save options: 'Replace Original' (with auto-backup) or 'Save as New File'",
         "UI loading state feedback on Save button during processing"
       ]
@@ -89,7 +90,8 @@
       "convert-file: Spawns FFmpeg for format conversions",
       "yolo-redact: Spawns Python process running yolo_redact.py for AI redaction",
       "bulk-mute-videos: Strips audio tracks across multiple selected videos",
-      "bulk-extract-frame: Extracts a specific frame number from multiple videos into dedicated folders"
+      "bulk-extract-frame: Extracts a specific frame number from multiple videos into dedicated folders",
+      "bulk-redact-images: Performs batch AI face redaction across multiple selected image files with progress tracking and cancelation"
     ]
   },
   "file_structure": {

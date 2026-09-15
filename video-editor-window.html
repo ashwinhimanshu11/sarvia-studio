@@ -16,6 +16,7 @@
     />
     <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" rel="stylesheet">
     <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./js/titlebar.js"></script>
     <style>
       body {
         margin: 0;
@@ -201,6 +202,25 @@
     </style>
   </head>
   <body>
+    <div class="app-titlebar">
+      <div class="app-titlebar-drag">
+        <div class="app-titlebar-brand">
+          <span class="material-symbols-rounded">movie_edit</span>
+          <span class="app-titlebar-title">Video Editor</span>
+        </div>
+      </div>
+      <div class="app-window-controls">
+        <button type="button" class="app-window-control" data-window-action="minimize" title="Minimize" aria-label="Minimize window">
+          <span class="material-symbols-rounded">remove</span>
+        </button>
+        <button type="button" class="app-window-control" data-window-action="maximize" title="Maximize" aria-label="Maximize window">
+          <span class="material-symbols-rounded">crop_square</span>
+        </button>
+        <button type="button" class="app-window-control app-window-close" data-window-action="close" title="Close" aria-label="Close window">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+    </div>
     <div class="exif-editor-header">
       <div class="header-title-area">
         <p>Video Editor</p>

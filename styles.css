@@ -7,6 +7,7 @@
     --gts-blue: #365675;
     --gts-teal: #1d6487;
     --gts-gradient: linear-gradient(135deg, var(--gts-purple), var(--gts-blue));
+    --app-titlebar-height: 42px;
 
     /* Premium Subtle Light Theme */
     --bg-base: #eef1f6; /* Cool, soft gray for the main workspace */
@@ -79,11 +80,143 @@ body {
     font-family: "Poppins", sans-serif;
     margin: 0;
     height: 100vh;
+    box-sizing: border-box;
+    padding-top: var(--app-titlebar-height);
     background-color: var(--bg-base);
     color: var(--text-main);
     display: flex;
     overflow: hidden;
     letter-spacing: 0.2px;
+}
+
+.app-titlebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--app-titlebar-height);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-panel);
+    background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: 0 1px 10px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(14px);
+    z-index: 100000;
+    -webkit-app-region: drag;
+}
+
+.app-titlebar-drag {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.app-titlebar-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding-left: 14px;
+    color: var(--text-main);
+}
+
+.app-titlebar-brand .material-symbols-rounded {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: var(--gts-gradient);
+    color: #fff;
+    font-size: 16px;
+}
+
+.app-titlebar-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.app-window-controls {
+    height: 100%;
+    display: flex;
+    align-items: stretch;
+    -webkit-app-region: no-drag;
+}
+
+.app-window-control {
+    width: 44px;
+    height: 100%;
+    border: 0;
+    border-left: 1px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.app-window-control .material-symbols-rounded {
+    font-size: 16px;
+}
+
+.app-window-control:hover {
+    background: var(--bg-hover);
+    color: var(--text-main);
+}
+
+.app-window-close:hover {
+    background: #ef4444;
+    color: #fff;
+}
+
+.global-settings-btn {
+    top: calc(var(--app-titlebar-height) + 24px) !important;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+.item-content:focus-visible,
+.converter-file-row:focus-visible,
+.custom-dropdown-item:focus-visible,
+.redact-box-overlay:focus-visible,
+label[role="checkbox"]:focus-visible,
+[role="button"]:focus-visible,
+[role="checkbox"]:focus-visible {
+    outline: 2px solid var(--gts-teal);
+    outline-offset: 2px;
+}
+
+.custom-dropdown-item:focus-visible {
+    background: var(--bg-hover);
+    color: var(--gts-blue);
+}
+
+kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 22px;
+    padding: 2px 7px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: var(--bg-base);
+    color: var(--text-main);
+    font-family: "Poppins", sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
 }
 
 /* =========================================
@@ -106,6 +239,8 @@ body:not([data-mode="setup"]) #setup-workspace {
 }
 body[data-mode="setup"] #setup-workspace {
     display: flex !important;
+    height: 100% !important;
+    width: 100vw;
 }
 
 /* 2. METADATA WORKSPACE (Strictly direct children) */
@@ -128,7 +263,7 @@ body[data-mode="metadata"] {
 
 body[data-mode="metadata"] > .main-content {
     flex: 1;
-    height: 100vh;
+    height: 100%;
 }
 
 /* 3. CONVERTER WORKSPACE */
@@ -140,7 +275,7 @@ body[data-mode="converter"] .converter-workspace {
     display: flex !important;
     flex-direction: row;
     width: 100vw;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
 }
 
@@ -153,7 +288,7 @@ body[data-mode="editor"] .editor-workspace {
     display: flex !important;
     flex-direction: row;
     width: 100vw;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
 }
 
@@ -166,7 +301,7 @@ body[data-mode="video-editor"] #video-workspace {
     display: flex !important;
     flex-direction: row;
     width: 100vw;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
 }
 
@@ -178,14 +313,14 @@ body:not([data-mode="settings"]) #settings-workspace {
 body[data-mode="settings"] #settings-workspace {
     display: flex !important;
     width: 100vw;
-    height: 100vh;
+    height: 100% !important;
 }
 
 .app-launcher {
     position: relative;
     overflow: hidden;
     width: 100%;
-    min-height: 100vh;
+    min-height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1509,4 +1644,167 @@ tr:hover .exif-fetch-btn {
   background: #ef4444;
   border-color: #ffffff;
   transform: scale(1.2);
+}
+
+/* =========================================
+   Bulk Save Options Modal
+   ========================================= */
+.bulk-save-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.65);
+  z-index: 9999999;
+  backdrop-filter: blur(6px);
+}
+
+.bulk-save-box {
+  width: 480px;
+  max-width: 90vw;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-family: "Poppins", sans-serif;
+}
+
+.bulk-save-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.bulk-save-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.bulk-save-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.bulk-save-close-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-main);
+}
+
+.bulk-save-desc {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.bulk-save-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bulk-save-option-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-base);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.bulk-save-option-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--gts-teal);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.bulk-save-icon-wrap {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: rgba(45, 212, 191, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.bulk-save-icon-wrap.blue {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.bulk-save-icon-wrap .material-symbols-rounded {
+  font-size: 24px;
+  color: var(--gts-teal);
+}
+
+.bulk-save-icon-wrap.blue .material-symbols-rounded {
+  color: #3b82f6;
+}
+
+.bulk-save-text-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.bulk-save-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.bulk-save-sublabel {
+  font-size: 12px;
+  font-weight: 300;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.bulk-save-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.bulk-save-cancel-btn {
+  padding: 8px 20px;
+  font-family: "Poppins", sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-base);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.bulk-save-cancel-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
 }
