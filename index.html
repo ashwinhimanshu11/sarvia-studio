@@ -161,6 +161,13 @@
               >Browse videos in a directory and open them in the video editor.</small
             >
           </button>
+          <button id="open-audio-mode" class="launcher-card">
+            <span class="material-symbols-rounded">audio_file</span>
+            <strong>Audio Operations</strong>
+            <small
+              >Browse, preview, and prepare audio files for editing and processing.</small
+            >
+          </button>
         </div>
       </div>
     </div>
@@ -1147,6 +1154,228 @@
           <div id="save-dropdown-vid" class="dropdown-menu">
             <button id="btn-save-replace-vid" class="dropdown-item">Replace Original</button>
             <button id="btn-save-new-vid" class="dropdown-item">Save as New File</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <div id="audio-workspace" class="audio-workspace" style="height: 100%">
+      <div class="sidebar-left">
+        <div class="folder-input-container" style="display: flex; gap: 8px; align-items: center">
+          <button
+            id="audio-back-btn"
+            class="icon-btn"
+            title="Back to workspace chooser"
+            style="padding: 8px"
+          >
+            <span class="material-symbols-rounded" style="font-size: 18px"
+              >arrow_back</span
+            >
+          </button>
+          <input
+            type="text"
+            id="audio-folder-input"
+            style="flex: 1"
+            placeholder="Paste folder path and press Enter..."
+          />
+        </div>
+        <div id="audio-drop-zone" class="converter-drop-zone">
+          <span class="material-symbols-rounded">drive_folder_upload</span>
+          <strong>Drop a folder here</strong>
+          <span>or paste a path above</span>
+        </div>
+        <div id="audio-file-tree" style="flex-grow: 1; overflow-y: auto; padding: 15px 10px;"></div>
+      </div>
+
+      <div class="resizer"></div>
+
+      <div class="main-content editor-main audio-main">
+        <div id="audio-empty-state" class="main-empty-state">
+          <span class="material-symbols-rounded">headphones</span>
+          <h2>Select an Audio File</h2>
+          <p>Choose an audio file from the sidebar to preview it.</p>
+        </div>
+
+        <div id="audio-preview-container">
+          <div class="audio-preview-card">
+            <div class="audio-preview-copy">
+              <p>Now previewing</p>
+              <h2 id="audio-preview-name"></h2>
+              <span id="audio-preview-details"></span>
+            </div>
+
+            <div class="audio-waveform-wrap">
+              <canvas
+                id="audio-waveform"
+                tabindex="0"
+                role="slider"
+                aria-label="Audio playback position"
+                aria-valuemin="0"
+                aria-valuemax="0"
+                aria-valuenow="0"
+              ></canvas>
+              <div class="audio-time-row">
+                <span id="audio-current-time">00:00</span>
+                <span id="audio-duration">00:00</span>
+              </div>
+            </div>
+
+            <div id="audio-player-status" class="audio-player-status" aria-live="polite">
+              Loading audio...
+            </div>
+
+            <div class="audio-player-controls">
+              <button id="audio-speed-btn" class="audio-control-btn audio-speed-btn" type="button" title="Change playback speed">
+                <span class="material-symbols-rounded">speed</span>
+                <span id="audio-speed-label">1×</span>
+              </button>
+              <div class="audio-transport-controls">
+                <button id="audio-rewind-btn" class="audio-control-btn" type="button" title="Rewind 10 seconds" aria-label="Rewind 10 seconds">
+                  <span class="material-symbols-rounded">replay_10</span>
+                </button>
+                <button id="audio-play-btn" class="audio-play-btn" type="button" title="Play" aria-label="Play">
+                  <span id="audio-play-icon" class="material-symbols-rounded">play_arrow</span>
+                </button>
+                <button id="audio-forward-btn" class="audio-control-btn" type="button" title="Forward 10 seconds" aria-label="Forward 10 seconds">
+                  <span class="material-symbols-rounded">forward_10</span>
+                </button>
+              </div>
+              <button id="audio-volume-btn" class="audio-control-btn" type="button" title="Mute" aria-label="Mute">
+                <span id="audio-volume-icon" class="material-symbols-rounded">volume_up</span>
+              </button>
+            </div>
+
+            <div class="audio-editor-toolbar">
+              <button id="audio-trim-toggle-btn" class="action-btn" type="button" aria-pressed="false">
+                <span class="material-symbols-rounded">content_cut</span>
+                <span id="audio-trim-toggle-label">Trim audio</span>
+              </button>
+              <button id="audio-transcribe-toggle-btn" class="action-btn" type="button" aria-pressed="false">
+                <span class="material-symbols-rounded">subtitles</span>
+                <span id="audio-transcribe-toggle-label">Transcribe</span>
+              </button>
+            </div>
+
+            <section class="audio-trim-panel" aria-labelledby="audio-trim-heading">
+              <div class="audio-trim-heading-row">
+                <div>
+                  <p>Audio editor</p>
+                  <h3 id="audio-trim-heading">Trim selection</h3>
+                </div>
+                <button id="audio-trim-reset-btn" class="audio-text-btn" type="button">Reset</button>
+              </div>
+              <div class="audio-trim-inputs">
+                <label>
+                  <span>Start</span>
+                  <div class="audio-time-input-wrap">
+                    <input id="audio-trim-start" type="number" min="0" value="0" step="0.01" inputmode="decimal" />
+                    <button id="audio-set-start-btn" type="button" title="Set start to current playback position">Set</button>
+                  </div>
+                </label>
+                <span class="material-symbols-rounded audio-trim-divider">arrow_forward</span>
+                <label>
+                  <span>End</span>
+                  <div class="audio-time-input-wrap">
+                    <input id="audio-trim-end" type="number" min="0" value="0" step="0.01" inputmode="decimal" />
+                    <button id="audio-set-end-btn" type="button" title="Set end to current playback position">Set</button>
+                  </div>
+                </label>
+                <div class="audio-trim-duration">
+                  <span>Selection</span>
+                  <strong id="audio-trim-duration">00:00</strong>
+                </div>
+              </div>
+              <div class="audio-trim-actions">
+                <button id="audio-preview-trim-btn" class="action-btn" type="button">
+                  <span class="material-symbols-rounded">play_circle</span>
+                  Preview selection
+                </button>
+                <button id="audio-save-trim-btn" class="action-btn primary" type="button">
+                  <span class="material-symbols-rounded">content_cut</span>
+                  Trim &amp; Save
+                </button>
+              </div>
+            </section>
+
+            <section class="audio-transcription-panel" aria-labelledby="audio-transcription-heading">
+              <div class="audio-trim-heading-row">
+                <div>
+                  <p>BHASHINI speech to text</p>
+                  <h3 id="audio-transcription-heading">Transcription</h3>
+                </div>
+                <button id="audio-clear-keys-btn" class="audio-text-btn" type="button">Clear keys</button>
+              </div>
+              <div class="audio-transcription-fields">
+                <label>
+                  <span>Spoken language</span>
+                  <select id="audio-transcription-language">
+                    <option value="en">English</option>
+                    <option value="as">Assamese</option>
+                    <option value="bn">Bengali</option>
+                    <option value="brx">Bodo</option>
+                    <option value="doi">Dogri</option>
+                    <option value="gu">Gujarati</option>
+                    <option value="hi" selected>Hindi</option>
+                    <option value="kn">Kannada</option>
+                    <option value="ks">Kashmiri</option>
+                    <option value="kok">Konkani</option>
+                    <option value="mai">Maithili</option>
+                    <option value="ml">Malayalam</option>
+                    <option value="mni">Manipuri</option>
+                    <option value="mr">Marathi</option>
+                    <option value="ne">Nepali</option>
+                    <option value="or">Odia</option>
+                    <option value="pa">Punjabi</option>
+                    <option value="sa">Sanskrit</option>
+                    <option value="sat">Santali</option>
+                    <option value="sd">Sindhi</option>
+                    <option value="ta">Tamil</option>
+                    <option value="te">Telugu</option>
+                    <option value="ur">Urdu</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Udyat API Key</span>
+                  <input id="audio-udyat-key" type="password" placeholder="Paste Udyat Key" />
+                </label>
+                <label>
+                  <span>Inference API Key</span>
+                  <input id="audio-inference-key" type="password" placeholder="Paste Inference Key" />
+                </label>
+              </div>
+              <div class="audio-transcription-options" style="margin-top: 12px; display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="audio-include-timestamps" style="width: auto; height: auto;" />
+                <label for="audio-include-timestamps" style="color: var(--text-main); font-size: 12px; cursor: pointer;">Generate timestamps (takes longer)</label>
+              </div>
+              <div class="audio-key-note">
+                <span class="material-symbols-rounded">lock</span>
+                Keys are sent securely to BHASHINI and never stored on our servers.
+              </div>
+              <div id="audio-transcription-status" class="audio-transcription-status" aria-live="polite"></div>
+              <div id="audio-transcript-result" class="audio-transcript-result">
+                <div class="audio-transcript-result-heading">
+                  <span>Generated Transcript</span>
+                  <div>
+                    <button id="audio-copy-transcript-btn" class="audio-text-btn" type="button" title="Copy to clipboard">
+                      <span class="material-symbols-rounded">content_copy</span>
+                    </button>
+                    <button id="audio-save-transcript-btn" class="audio-text-btn" type="button" title="Save as text file">
+                      <span class="material-symbols-rounded">save</span>
+                    </button>
+                  </div>
+                </div>
+                <textarea id="audio-transcript-text" placeholder="Your transcript will appear here..." spellcheck="false"></textarea>
+              </div>
+              <div class="audio-trim-actions">
+                <button id="audio-transcribe-btn" class="action-btn primary" type="button">
+                  <span class="material-symbols-rounded">graphic_eq</span>
+                  Transcribe audio
+                </button>
+              </div>
+            </section>
+
+            <audio id="audio-preview-player" preload="metadata"></audio>
           </div>
         </div>
       </div>

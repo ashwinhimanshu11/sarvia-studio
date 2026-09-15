@@ -38,6 +38,9 @@ export function initUI() {
     .getElementById("open-video-editor-mode")
     .addEventListener("click", () => setAppMode("video-editor"));
   document
+    .getElementById("open-audio-mode")
+    .addEventListener("click", () => setAppMode("audio"));
+  document
     .getElementById("converter-back-btn")
     .addEventListener("click", () => setAppMode(""));
   document
@@ -48,6 +51,9 @@ export function initUI() {
     .addEventListener("click", () => setAppMode(""));
   document
     .getElementById("video-back-btn")
+    .addEventListener("click", () => setAppMode(""));
+  document
+    .getElementById("audio-back-btn")
     .addEventListener("click", () => setAppMode(""));
 
   const globalSettingsBtn = document.getElementById("global-settings-btn");

@@ -12,6 +12,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("read-dir-recursive", dirPath),
   getFileDetails: (filePath) =>
     ipcRenderer.invoke("get-file-details", filePath),
+  getFileUrl: (filePath) => ipcRenderer.invoke("get-file-url", filePath),
+  readAudioBuffer: (filePath) => ipcRenderer.invoke("read-audio-buffer", filePath),
+  trimAudio: (payload) => ipcRenderer.invoke("trim-audio", payload),
+  transcribeAudio: (payload) => ipcRenderer.invoke("transcribe-audio", payload),
+  saveTranscript: (payload) => ipcRenderer.invoke("save-transcript", payload),
   getExifData: (filePath) => ipcRenderer.invoke("get-exif-data", filePath),
   copyText: (text) => ipcRenderer.invoke("copy-text", text),
   readText: () => ipcRenderer.invoke("read-text"),

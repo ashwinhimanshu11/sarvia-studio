@@ -1,7 +1,7 @@
 {
   "project_name": "sarvia",
   "version": "1.0.0",
-  "description": "Cross-platform Desktop Application for Metadata Inspection/Stripping, Image & Video Editing, AI Redaction, and Media Conversion.",
+  "description": "Cross-platform Desktop Application for Metadata Inspection/Stripping, Image, Video & Audio Operations, AI Redaction, and Media Conversion.",
   "tech_stack": {
     "framework": "Electron (CommonJS)",
     "runtime": "Node.js",
@@ -70,6 +70,23 @@
         "Save options: 'Replace Original' or 'Save as New File' with UI loading feedback state ('Saving...')"
       ]
     },
+    "audio_operations": {
+      "module": "js/audio.js",
+      "description": "Audio file browser, playback, editing, and BHASHINI transcription workspace",
+      "features": [
+        "Audio-only directory tree with nested folder navigation",
+        "Folder path input and drag-and-drop loading",
+        "Keyboard-accessible file and folder navigation",
+        "Selected-file format and size details",
+        "Decoded waveform generated from the selected audio file",
+        "Custom playback controls with play/pause, 10-second skip, speed, mute, time display, and waveform seeking",
+        "Precise audio trimming with draggable waveform start/end handles, playhead-based boundary capture, range highlighting, selection preview, and replace-or-export save options",
+        "Continuous pointer scrubbing by clicking and dragging across the waveform",
+        "Opt-in BHASHINI speech-to-text panel with runtime-only Udyat and inference credentials",
+        "English and 22 Indian transcription languages using language-appropriate BHASHINI ASR services",
+        "Copy transcript and export transcript as a text file"
+      ]
+    },
     "media_converter": {
       "module": "js/converter.js",
       "description": "Batch image and video format converter",
@@ -91,7 +108,12 @@
       "yolo-redact: Spawns Python process running yolo_redact.py for AI redaction",
       "bulk-mute-videos: Strips audio tracks across multiple selected videos",
       "bulk-extract-frame: Extracts a specific frame number from multiple videos into dedicated folders",
-      "bulk-redact-images: Performs batch AI face redaction across multiple selected image files with progress tracking and cancelation"
+      "bulk-redact-images: Performs batch AI face redaction across multiple selected image files with progress tracking and cancelation",
+      "get-file-url: Creates a safe local file URL for media preview",
+      "read-audio-buffer: Reads a selected audio file for waveform decoding with a 200 MB safety limit",
+      "trim-audio: Uses FFmpeg to trim and re-encode a selected audio range with safe original-file replacement",
+      "transcribe-audio: Normalizes audio to mono 16 kHz FLAC and sends it to BHASHINI without persisting credentials",
+      "save-transcript: Exports generated transcription text through a native save dialog"
     ]
   },
   "file_structure": {
@@ -101,6 +123,7 @@
     "styles.css": "Global design system, dark theme, layout rules, custom dropdowns, and animations",
     "js/editor.js": "Image editor workspace frontend logic",
     "js/video-editor.js": "Video editor workspace frontend logic & live blur preview",
+    "js/audio.js": "Audio operations workspace browser and playback preview logic",
     "js/metadata.js": "Metadata inspector & cleaner frontend logic",
     "js/converter.js": "Media converter frontend logic",
     "js/progress.js": "Progress bar component handler",

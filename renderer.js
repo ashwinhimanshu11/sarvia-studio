@@ -4,6 +4,7 @@ import { initConverter, loadConverterFolder } from "./js/converter.js";
 import { initMetadata, loadRootDirectory } from "./js/metadata.js";
 import { initEditor, loadEditorFolder } from "./js/editor.js";
 import { initVideoEditor, loadVideoEditorFolder } from "./js/video-editor.js";
+import { initAudioOperations, loadAudioFolder } from "./js/audio.js";
 import { initParticles } from "./js/particles.js";
 
 // Initialize all the isolated modules
@@ -14,12 +15,14 @@ initConverter();
 initMetadata();
 initEditor();
 initVideoEditor();
+initAudioOperations();
 
 // Global Drag and Drop Orchestrator
 const dragOverlay = document.getElementById("drag-overlay");
 const converterDropZone = document.getElementById("converter-drop-zone");
 const editorDropZone = document.getElementById("editor-drop-zone");
 const videoDropZone = document.getElementById("video-drop-zone");
+const audioDropZone = document.getElementById("audio-drop-zone");
 
 document.addEventListener("dragover", (e) => {
   e.preventDefault();
@@ -31,6 +34,8 @@ document.addEventListener("dragover", (e) => {
     editorDropZone.classList.add("active");
   if (document.body.dataset.mode === "video-editor")
     videoDropZone.classList.add("active");
+  if (document.body.dataset.mode === "audio")
+    audioDropZone.classList.add("active");
 });
 
 document.addEventListener("dragleave", (e) => {
@@ -43,6 +48,8 @@ document.addEventListener("dragleave", (e) => {
     editorDropZone.classList.remove("active");
   if (e.relatedTarget === null || e.target === videoDropZone)
     videoDropZone.classList.remove("active");
+  if (e.relatedTarget === null || e.target === audioDropZone)
+    audioDropZone.classList.remove("active");
 });
 
 document.addEventListener("drop", (e) => {
@@ -51,6 +58,7 @@ document.addEventListener("drop", (e) => {
   converterDropZone.classList.remove("active");
   editorDropZone.classList.remove("active");
   videoDropZone.classList.remove("active");
+  audioDropZone.classList.remove("active");
 
   const files = e.dataTransfer.files;
   if (files.length === 0) return;
@@ -67,6 +75,7 @@ document.addEventListener("drop", (e) => {
     loadEditorFolder(droppedPath);
   } else if (document.body.dataset.mode === "video-editor") {
     loadVideoEditorFolder(droppedPath);
+  } else if (document.body.dataset.mode === "audio") {
+    loadAudioFolder(droppedPath);
   }
 });
-

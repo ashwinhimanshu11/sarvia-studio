@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, clipboard, dialog } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
+const { randomUUID } = require("node:crypto");
+const { pathToFileURL } = require("node:url");
 const { execFile } = require("child_process");
 const { performWindowsSetup } = require("./setup-main.js");
 
@@ -120,6 +122,48 @@ function getUniqueOutputPath(inputPath, targetExtension) {
         counter += 1;
     }
     return outputPath;
+}
+
+function getUniqueTrimmedAudioPath(inputPath, outputDirectory) {
+  const parsed = path.parse(inputPath);
+  const directory = outputDirectory || parsed.dir;
+  const cleanName = parsed.name.replace(/_trimmed(_\d+)?$/, "");
+  let outputPath = path.join(directory, `${cleanName}_trimmed${parsed.ext}`);
+  let counter = 2;
+  while (fs.existsSync(outputPath)) {
+    outputPath = path.join(directory, `${cleanName}_trimmed_${counter}${parsed.ext}`);
+    counter += 1;
+  }
+  return outputPath;
+}
+
+function getAudioTrimEncodingArgs(extension) {
+  switch (extension.toLowerCase()) {
+    case ".mp3":
+      return ["-c:a", "libmp3lame", "-q:a", "2"];
+    case ".wav":
+      return ["-c:a", "pcm_s16le"];
+    case ".aif":
+    case ".aiff":
+      return ["-c:a", "pcm_s16be"];
+    case ".flac":
+      return ["-c:a", "flac"];
+    case ".aac":
+      return ["-c:a", "aac", "-b:a", "256k", "-f", "adts"];
+    case ".m4a":
+      return ["-c:a", "aac", "-b:a", "256k"];
+    case ".alac":
+      return ["-c:a", "alac", "-f", "ipod"];
+    case ".ogg":
+    case ".oga":
+      return ["-c:a", "libvorbis", "-q:a", "6"];
+    case ".opus":
+      return ["-c:a", "libopus", "-b:a", "192k"];
+    case ".wma":
+      return ["-c:a", "wmav2", "-b:a", "192k"];
+    default:
+      return ["-c:a", "copy"];
+  }
 }
 
 function getConversionArgs(inputPath, outputPath, targetExtension) {
@@ -412,6 +456,345 @@ ipcMain.handle("get-file-details", async (event, filePath) => {
   } catch (error) {
     return { error: error.message };
   }
+});
+
+ipcMain.handle("get-file-url", async (event, filePath) => {
+  try {
+    if (!fs.statSync(filePath).isFile()) {
+      return { error: "The selected path is not a file." };
+    }
+    return { url: pathToFileURL(filePath).href };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle("read-audio-buffer", async (event, filePath) => {
+  try {
+    const stats = await fs.promises.stat(filePath);
+    if (!stats.isFile()) return { error: "The selected path is not a file." };
+    if (stats.size > 200 * 1024 * 1024) {
+      return { error: "Waveform preview is limited to audio files under 200 MB." };
+    }
+    return { data: await fs.promises.readFile(filePath) };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+const BHASHINI_INFERENCE_URL = "https://dhruva-api.bhashini.gov.in/services/inference/pipeline";
+const BHASHINI_MULTILINGUAL_ASR = "bhashini/ai4bharat/conformer-multilingual-asr";
+const BHASHINI_ENGLISH_ASR = "ai4bharat/whisper-medium-en--gpu--t4";
+const BHASHINI_ASR_LANGUAGES = new Set([
+  "en", "as", "bn", "brx", "doi", "gu", "hi", "kn", "ks", "kok", "mai", "ml",
+  "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur",
+]);
+
+function safeBhashiniCredential(value) {
+  const credential = typeof value === "string" ? value.trim() : "";
+  return credential.length >= 8 && credential.length <= 512 && !/[\r\n]/.test(credential)
+    ? credential
+    : null;
+}
+
+function extractBhashiniTranscript(payload) {
+  const asrResponse = Array.isArray(payload?.pipelineResponse)
+    ? payload.pipelineResponse.find((item) => item?.taskType === "asr")
+    : null;
+  const output = Array.isArray(asrResponse?.output) ? asrResponse.output : [];
+  return output
+    .map((item) => item?.source ?? item?.transcript ?? item?.text ?? "")
+    .filter((text) => typeof text === "string" && text.trim())
+    .join("\n")
+    .trim();
+}
+
+function getBhashiniError(payload, status) {
+  const message = payload?.message || payload?.error?.message || payload?.error || payload?.detail;
+  if (typeof message === "string" && message.trim()) {
+    return `BHASHINI request failed (${status}): ${message.trim().slice(0, 500)}`;
+  }
+  if (status === 401 || status === 403) {
+    return "BHASHINI rejected the credentials. Check that both keys are current and copied exactly.";
+  }
+  if (status === 429) return "BHASHINI rate limit reached. Please wait and try again.";
+  return `BHASHINI request failed with status ${status}.`;
+}
+
+ipcMain.handle("transcribe-audio", async (event, payload) => {
+  cancelCurrentTask = false;
+  const filePath = payload?.filePath;
+  const languageCode = typeof payload?.languageCode === "string" ? payload.languageCode : "";
+  const udyatKey = safeBhashiniCredential(payload?.udyatKey);
+  const inferenceKey = safeBhashiniCredential(payload?.inferenceKey);
+  const includeTimestamps = Boolean(payload?.includeTimestamps);
+
+  if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    return { error: "Audio file not found." };
+  }
+  if (!BHASHINI_ASR_LANGUAGES.has(languageCode)) {
+    return { error: "Choose a supported transcription language." };
+  }
+  if (!udyatKey || !inferenceKey) {
+    return { error: "Enter valid Udyat and inference keys." };
+  }
+
+  const inputStats = await fs.promises.stat(filePath);
+  if (inputStats.size > 50 * 1024 * 1024) {
+    return { error: "BHASHINI accepts audio files up to 50 MB." };
+  }
+  const ffmpegPath = getBundledBinaryPath("ffmpeg");
+  if (!fs.existsSync(ffmpegPath)) return { error: "Bundled FFmpeg binary not found." };
+
+  const tempPath = path.join(app.getPath("temp"), `sarvia-bhashini-${randomUUID()}.flac`);
+  try {
+    const conversion = await new Promise((resolve) => {
+      const child = execFile(ffmpegPath, [
+        "-y", "-hide_banner", "-loglevel", "error", "-i", filePath,
+        "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "flac", tempPath,
+      ], (error, stdout, stderr) => {
+        activeChildProcesses.delete(child);
+        resolve(error
+          ? { error: String(stderr || error.message).trim().slice(-1000) }
+          : { success: true });
+      });
+      activeChildProcesses.add(child);
+    });
+    if (conversion.error) return { error: `Could not prepare the audio: ${conversion.error}` };
+
+    const convertedStats = await fs.promises.stat(tempPath);
+    if (convertedStats.size > 50 * 1024 * 1024) {
+      return { error: "The prepared audio is over BHASHINI's 50 MB request limit." };
+    }
+
+    const fetchBhashini = async (audioContentBase64) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 180000);
+      try {
+        const response = await fetch(BHASHINI_INFERENCE_URL, {
+          method: "POST",
+          headers: {
+            Accept: "*/*",
+            Authorization: inferenceKey,
+            "Content-Type": "application/json",
+            ulcaApiKey: udyatKey,
+          },
+          body: JSON.stringify({
+            pipelineTasks: [{
+              taskType: "asr",
+              config: {
+                language: { sourceLanguage: languageCode },
+                serviceId: languageCode === "en" ? BHASHINI_ENGLISH_ASR : BHASHINI_MULTILINGUAL_ASR,
+                audioFormat: "flac",
+                samplingRate: 16000,
+              },
+            }],
+            inputData: { audio: [{ audioContent: audioContentBase64 }] },
+          }),
+          signal: controller.signal,
+        });
+        const responseText = await response.text();
+        let responsePayload = {};
+        try { responsePayload = responseText ? JSON.parse(responseText) : {}; } catch (e) {}
+        if (!response.ok) throw new Error(getBhashiniError(responsePayload, response.status));
+        return extractBhashiniTranscript(responsePayload);
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+
+    if (!includeTimestamps) {
+      event.sender.send("task-progress", { title: "Transcribing Audio", current: 0, total: 1, detail: "Sending to BHASHINI..." });
+      const audioContent = (await fs.promises.readFile(tempPath)).toString("base64");
+      const transcript = await fetchBhashini(audioContent);
+      if (!transcript) return { error: "BHASHINI returned no transcript. Check the selected language and audio clarity." };
+      return { success: true, transcript };
+    } else {
+      const chunkDir = path.join(app.getPath("temp"), `sarvia-chunks-${randomUUID()}`);
+      await fs.promises.mkdir(chunkDir);
+
+      const chunkingResult = await new Promise((resolve) => {
+        const child = execFile(ffmpegPath, [
+          "-y", "-hide_banner", "-loglevel", "error", "-i", tempPath,
+          "-f", "segment", "-segment_time", "15", "-c", "copy",
+          path.join(chunkDir, "chunk_%04d.flac")
+        ], (error) => {
+          activeChildProcesses.delete(child);
+          resolve(error ? { error: error.message } : { success: true });
+        });
+        activeChildProcesses.add(child);
+      });
+
+      if (chunkingResult.error) {
+        await fs.promises.rm(chunkDir, { recursive: true, force: true }).catch(() => {});
+        return { error: `Could not split audio for timestamps: ${chunkingResult.error}` };
+      }
+
+      const files = (await fs.promises.readdir(chunkDir)).sort();
+      let fullTranscript = "";
+      const formatS = (s) => {
+        const m = Math.floor(s / 60).toString().padStart(2, '0');
+        const sc = (s % 60).toString().padStart(2, '0');
+        return `${m}:${sc}`;
+      };
+
+      for (let i = 0; i < files.length; i++) {
+        if (cancelCurrentTask) {
+          await fs.promises.rm(chunkDir, { recursive: true, force: true }).catch(() => {});
+          return { error: "Transcription cancelled." };
+        }
+        event.sender.send("task-progress", {
+          title: "Transcribing with Timestamps",
+          current: i,
+          total: files.length,
+          detail: `Processing segment ${i + 1} of ${files.length}...`,
+        });
+
+        const chunkPath = path.join(chunkDir, files[i]);
+        const audioContent = (await fs.promises.readFile(chunkPath)).toString("base64");
+        
+        try {
+          const text = await fetchBhashini(audioContent);
+          const startSec = i * 15;
+          const endSec = startSec + 15;
+          if (text && text.trim()) {
+            fullTranscript += `[${formatS(startSec)} - ${formatS(endSec)}] ${text.trim()}\n`;
+          }
+        } catch (err) {
+          if (err.name !== "AbortError") {
+             // If a single chunk fails, we append an error marker and continue so we don't lose everything
+             const startSec = i * 15;
+             const endSec = startSec + 15;
+             fullTranscript += `[${formatS(startSec)} - ${formatS(endSec)}] [Audio unclear or API error]\n`;
+          }
+        }
+        // Small delay to respect rate limits
+        if (i < files.length - 1) await new Promise(r => setTimeout(r, 600));
+      }
+
+      await fs.promises.rm(chunkDir, { recursive: true, force: true }).catch(() => {});
+      return { success: true, transcript: fullTranscript.trim() || "No speech detected in any segments." };
+    }
+  } catch (error) {
+    if (error?.name === "AbortError") return { error: "BHASHINI timed out." };
+    return { error: `Could not transcribe: ${error.message}` };
+  } finally {
+    await fs.promises.unlink(tempPath).catch(() => {});
+  }
+});
+
+ipcMain.handle("save-transcript", async (event, payload) => {
+  const transcript = typeof payload?.transcript === "string" ? payload.transcript : "";
+  const sourcePath = payload?.sourcePath;
+  if (!transcript.trim() || !sourcePath) return { error: "There is no transcript to save." };
+  const parsed = path.parse(sourcePath);
+  const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
+    title: "Save Transcript",
+    defaultPath: path.join(parsed.dir, `${parsed.name}_transcript.txt`),
+    filters: [{ name: "Text document", extensions: ["txt"] }],
+  });
+  if (result.canceled || !result.filePath) return { cancelled: true };
+  try {
+    await fs.promises.writeFile(result.filePath, transcript, "utf8");
+    return { success: true, outputPath: result.filePath };
+  } catch (error) {
+    return { error: `Could not save transcript: ${error.message}` };
+  }
+});
+
+ipcMain.handle("trim-audio", async (event, payload) => {
+  cancelCurrentTask = false;
+  const filePath = payload?.filePath;
+  const trimStart = Number(payload?.trimStart);
+  const trimEnd = Number(payload?.trimEnd);
+  const saveMode = payload?.saveMode;
+
+  if (!filePath || !fs.existsSync(filePath)) return { error: "Audio file not found." };
+  if (!Number.isFinite(trimStart) || !Number.isFinite(trimEnd) || trimStart < 0 || trimEnd - trimStart < 0.01) {
+    return { error: "Choose a valid trim range." };
+  }
+  const ffmpegPath = getBundledBinaryPath("ffmpeg");
+  if (!fs.existsSync(ffmpegPath)) return { error: "Bundled FFmpeg binary not found." };
+
+  const parsed = path.parse(filePath);
+  let outputPath;
+  if (saveMode === "replace") {
+    outputPath = path.join(parsed.dir, `.${parsed.name}_trim_temp_${Date.now()}${parsed.ext}`);
+  } else {
+    const outputDirectory = payload?.outputDir;
+    if (!outputDirectory || !fs.existsSync(outputDirectory) || !fs.statSync(outputDirectory).isDirectory()) {
+      return { error: "Choose a valid output folder." };
+    }
+    outputPath = getUniqueTrimmedAudioPath(filePath, outputDirectory);
+  }
+
+  const duration = trimEnd - trimStart;
+  const args = [
+    "-y",
+    "-hide_banner",
+    "-i", filePath,
+    "-ss", trimStart.toFixed(3),
+    "-t", duration.toFixed(3),
+    "-map", "0:a:0",
+    "-map_metadata", "0",
+    "-vn",
+    ...getAudioTrimEncodingArgs(parsed.ext),
+    outputPath,
+  ];
+
+  event.sender.send("task-progress", {
+    title: "Trimming Audio",
+    current: 0,
+    total: 1,
+    detail: `Trimming: ${parsed.base}`,
+  });
+
+  const processingResult = await new Promise((resolve) => {
+    const child = execFile(ffmpegPath, args, (error, stdout, stderr) => {
+      activeChildProcesses.delete(child);
+      if (cancelCurrentTask || error?.killed) {
+        resolve({ error: "Audio trim cancelled." });
+      } else if (error) {
+        const log = String(stderr || error.message).trim();
+        resolve({ error: log.slice(-2000) || "FFmpeg could not trim this audio file." });
+      } else {
+        resolve({ success: true });
+      }
+    });
+    activeChildProcesses.add(child);
+  });
+
+  if (processingResult.error) {
+    try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (error) {}
+    return processingResult;
+  }
+
+  if (saveMode === "replace") {
+    const backupPath = `${filePath}.sarvia_trim_backup_${Date.now()}`;
+    try {
+      fs.renameSync(filePath, backupPath);
+      fs.renameSync(outputPath, filePath);
+      fs.unlinkSync(backupPath);
+      outputPath = filePath;
+    } catch (error) {
+      try {
+        if (!fs.existsSync(filePath) && fs.existsSync(backupPath)) {
+          fs.renameSync(backupPath, filePath);
+        }
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+      } catch (rollbackError) {}
+      return { error: `Could not replace the original audio file: ${error.message}` };
+    }
+  }
+
+  event.sender.send("task-progress", {
+    title: "Trimming Audio",
+    current: 1,
+    total: 1,
+    detail: `Saved: ${path.basename(outputPath)}`,
+  });
+  mainWindow.webContents.send("metadata-updated", [outputPath]);
+  return { success: true, outputPath };
 });
 
 ipcMain.handle("get-exif-data", async (event, filePath) => {
