@@ -48,3 +48,5 @@ are excluded by `.gitignore`.
 11-08-26: implemented video edit features
 
 12-08-26: implemented video blur
+
+15-09-26: implemented audio operations, overhauled audio editor UI, and added transcription with timestamps
